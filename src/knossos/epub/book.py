@@ -48,7 +48,7 @@ class Chapter:
 def get_reading_order(book: epub.EpubBook) -> list[Chapter]:
     """
     Return the book's chapters in spine order (the order the author
-    intends them to be read), with raw XHTML content for each.
+    intended them to be read), with raw XHTML content for each.
     """
     chapters: list[Chapter] = []
 
@@ -106,7 +106,7 @@ def get_toc(book: epub.EpubBook, chapters: list[Chapter]) -> list[TocEntry]:
     Build a flat, navigable table of contents.
 
     `chapters` must be the same list produced by get_reading_order() for this
-    book — we map TOC hrefs to *positions in that list*, since that's what
+    book so this map TOC hrefs to *positions in that list*, since that's what
     the reader UI uses to track "current chapter".
     """
     href_to_position: dict[str, int] = {}

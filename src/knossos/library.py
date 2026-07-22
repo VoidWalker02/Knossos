@@ -29,8 +29,7 @@ def scan_directory(directory: Path) -> list[LibraryEntry]:
             meta = get_metadata(book)
         except Exception:
             # Prototype-level tolerance: one bad file shouldn't kill the
-            # whole library scan. Worth logging properly once we have
-            # real logging set up.
+            # whole library scan. Please do remember to change this later!!!!
             continue
 
         entries.append(LibraryEntry(path=path, title=meta.title, author=meta.author))

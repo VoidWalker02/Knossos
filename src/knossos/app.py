@@ -32,9 +32,7 @@ from knossos.ui.screens.library import LibraryScreen
 
 
 class ReaderScreen(Screen):
-    """The actual reading view — paging, TOC, scroll memory, progress persistence.
-    This is everything ReaderApp used to be, now scoped to a single Screen
-    so the app can switch back to the library."""
+    """The actual reading view. Paging, TOC, scroll memory, progress persistence."""
 
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -158,7 +156,7 @@ class ReaderScreen(Screen):
 
     def _chapter_title_for(self, chapter_index: int) -> str:
         """Best-effort human-readable label for a chapter, using the TOC
-        if we have a matching entry, otherwise a generic fallback."""
+        if there's a matching entry, otherwise uses generic fallback."""
         for entry in self.toc:
             if entry.chapter_position == chapter_index:
                 return entry.title
