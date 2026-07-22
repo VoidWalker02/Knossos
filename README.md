@@ -2,7 +2,7 @@
 
 A terminal-based EPUB reader with library management, bookmarks, and reading progress, built with Python and [Textual](https://github.com/Textualize/textual).
 
-Knossos aims to be a fast, keyboard-driven way to read and manage a local EPUB collection from the terminal, with planned support for browsing remote libraries via OPDS (in my case, a self-hosted [Calibre][https://calibre-ebook.com/download] instance)
+Knossos aims to be a fast, keyboard-driven way to read and manage a local EPUB collection from the terminal, with planned support for browsing remote libraries via OPDS (in my case, a self-hosted [Calibre](https://calibre-ebook.com/download) instance)
 
 ## Features
 

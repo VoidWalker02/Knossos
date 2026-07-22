@@ -19,3 +19,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/knossos"]
+
+[project.scripts]
+knossos = "knossos.app:main"
