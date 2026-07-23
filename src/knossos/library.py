@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from textual.containers import Vertical
 
 from knossos.epub.book import load_book, get_metadata
 
@@ -13,7 +14,7 @@ class LibraryEntry:
     path: Path
     title: str
     author: str | None
-
+    source_dir: Path
 
 def scan_directory(directory: Path) -> list[LibraryEntry]:
     """
@@ -32,7 +33,7 @@ def scan_directory(directory: Path) -> list[LibraryEntry]:
             # whole library scan. Please do remember to change this later!!!!
             continue
 
-        entries.append(LibraryEntry(path=path, title=meta.title, author=meta.author))
+        entries.append(LibraryEntry(path=path, title=meta.title, author=meta.author, source_dir=directory))
 
     return entries
 

@@ -183,3 +183,27 @@ def get_toc(book: epub.EpubBook, chapters: list[Chapter]) -> list[TocEntry]:
         entries.append(TocEntry(title=title.strip(), chapter_position=position, level=level))
 
     return entries
+
+def get_cover_image_bytes(book: epub.EpubBook) -> bytes | None:
+    """
+    Extract the cover image's raw bytes from an EPUB, if it has one.
+
+    EPUBs mark their cover in one of a couple of ways depending on how they
+    were produced — most commonly via an OPF <meta name="cover" content="..."/>
+    pointing at a manifest item id, but some EPUBs instead just mark an item
+    with the semantic type ITEM_COVER directly. We check both, in that order.
+    """
+    # Path 1: OPF metadata pointing at a manifest item id.
+    cover_meta = book.get_metadata("OPF", "cover")
+    if cover_meta:
+        cover_id = cover_meta[0][1].get("content")
+        if cover_id:
+            item = book.get_item_with_id(cover_id)
+            if item is not None:
+                return item.get_content()
+
+    # Path 2: an item explicitly typed as the cover image.
+    for item in book.get_items_of_type(ebooklib.ITEM_COVER):
+        return item.get_content()
+
+    return None   

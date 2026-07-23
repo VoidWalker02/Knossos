@@ -141,3 +141,12 @@ def delete_bookmark(conn: sqlite3.Connection, bookmark_id: int) -> None:
     """Remove a bookmark by its id."""
     conn.execute("DELETE FROM bookmarks WHERE id = ?", (bookmark_id,))
     conn.commit()
+
+
+
+def get_book_id_by_path(conn: sqlite3.Connection, path: str) -> int | None:
+    """Look up a book's id by path, without creating one if it doesn't exist.
+    Used for read-only lookups (e.g. showing progress in a preview pane)
+    where we don't want browsing to silently register books in the db."""
+    row = conn.execute("SELECT id FROM books WHERE path = ?", (path,)).fetchone()
+    return row["id"] if row else None
