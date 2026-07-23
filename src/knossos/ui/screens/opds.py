@@ -11,6 +11,7 @@ from textual.widgets import Header, Footer, ListView, ListItem, Label
 
 from knossos.opds.client import fetch_feed, download_book
 from knossos.opds.feed import parse_feed, OPDSFeed, OPDSEntry
+from knossos.config import get_paths, load_config
 
 OPDS_ROOT_URL = "http://100.122.21.102:8080/opds"
 DOWNLOAD_DIR = Path(__file__).resolve().parents[3] / "opds_downloads"
