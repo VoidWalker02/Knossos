@@ -33,6 +33,9 @@ from knossos.ui.screens.library import LibraryScreen
 from knossos.ui.screens.opds import OPDSScreen
 
 
+from knossos.config import get_paths, load_config
+
+
 class ReaderScreen(Screen):
     """The actual reading view. Paging, TOC, scroll memory, progress persistence."""
 
@@ -252,11 +255,19 @@ class KnossosApp(App):
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
+    paths = get_paths()
+    config = load_config(paths)
+
+    if len(sys.argv) >= 2:
+        library_dir = Path(sys.argv[1])
+    elif config.library_dir:
+        library_dir = Path(config.library_dir)
+    else:
         print("Usage: knossos <path-to-library-directory>")
+        print("(or set a default library_dir in your config file)")
         sys.exit(1)
 
-    KnossosApp(Path(sys.argv[1])).run()
+    KnossosApp(library_dir).run()
 
 
 if __name__ == "__main__":

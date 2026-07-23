@@ -31,9 +31,13 @@ class OPDSScreen(Screen):
         ("escape", "go_back", "Back"),
     ]
 
-    def __init__(self, root_url: str = OPDS_ROOT_URL) -> None:
+    def __init__(self, root_url: str | None = None) -> None:
         super().__init__()
-        self.root_url = root_url
+        if root_url is None:
+            config = load_config(get_paths())
+            root_url = config.opds_root_url or OPDS_ROOT_URL  # fall back to hardcoded default if unset
+        self.root_url = root_url       
+
         self.feed_stack: list[str] = []  # URLs to return to on "back"
         self.current_feed: OPDSFeed | None = None
         self._current_url: str | None = None
