@@ -1,6 +1,6 @@
 [project]
 name = "knossos"
-version = "0.1.0"
+version = "0.2.0"
 description = "A terminal EPUB reader with library management and OPDS support"
 requires-python = ">=3.10"
 
