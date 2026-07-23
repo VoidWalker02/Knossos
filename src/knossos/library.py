@@ -35,3 +35,35 @@ def scan_directory(directory: Path) -> list[LibraryEntry]:
         entries.append(LibraryEntry(path=path, title=meta.title, author=meta.author))
 
     return entries
+
+def scan_libraries(directories: list[Path]) -> list[LibraryEntry]:
+
+    """Scan multiple directories and merge results, deduplicating by resolved path
+
+    in case the same book is reachable from more than one configured folder."""
+
+    seen_paths: set[Path] = set()
+
+    entries: list[LibraryEntry] = []
+
+    for directory in directories:
+
+        if not directory.exists():
+
+            continue  # a configured folder might be an unmounted drive, etc.
+
+        for entry in scan_directory(directory):
+
+            resolved = entry.path.resolve()
+
+            if resolved in seen_paths:
+
+                continue
+
+            seen_paths.add(resolved)
+
+            entries.append(entry)
+
+    return sorted(entries, key=lambda e: e.title)
+
+

@@ -8,7 +8,7 @@ from textual.screen import Screen
 from textual.app import ComposeResult
 from textual.widgets import Header, Footer, ListView, ListItem, Label
 
-from knossos.library import scan_directory, LibraryEntry
+from knossos.library import scan_libraries, LibraryEntry
 
 
 class LibraryScreen(Screen):
@@ -19,10 +19,10 @@ class LibraryScreen(Screen):
         ("o", "open_opds", "Browse OPDS"),
     ]
 
-    def __init__(self, library_dir: Path) -> None:
+    def __init__(self, library_dirs: Path) -> None:
         super().__init__()
-        self.library_dir = library_dir
-        self.entries: list[LibraryEntry] = []
+        self.library_dirs = library_dirs
+        self.entries = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -31,7 +31,7 @@ class LibraryScreen(Screen):
 
     def on_mount(self) -> None:
         self.title = "Knossos — Library"
-        self.entries = scan_directory(self.library_dir)
+        self.entries = scan_libraries(self.library_dirs)
 
         list_view = self.query_one("#library-list", ListView)
         for entry in self.entries:
@@ -39,8 +39,10 @@ class LibraryScreen(Screen):
             if entry.author:
                 label_text += f"  —  {entry.author}"
             item = ListItem(Label(label_text))
-            item.book_path = entry.path  # stashed for lookup on select
+            item.book_path = entry.path
             list_view.append(item)
+
+
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         self.app.open_book(event.item.book_path)

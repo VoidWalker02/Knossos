@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from platformdirs import PlatformDirs
+
+import toml
 
 APP_NAME = "knossos"
 
@@ -38,17 +40,27 @@ def get_paths() -> Paths:
 
     return Paths(config_dir=config_dir, data_dir=data_dir, cache_dir=cache_dir)
 
-import toml
 
 
-# knossos/config.py (changes to Config)
+
+@dataclass
+class OPDSServerConfig:
+    url: str
+    name: str | None = None
+
+    @property
+    def display_name(self) -> str:
+        return self.name or self.url
+
+
 
 @dataclass
 class Config:
-    library_dir: str | None = None
+    library_dirs: list[str] = field(default_factory=list)  # was library_dir: str | None
+    opds_servers: list[OPDSServerConfig] = field(default_factory=list)
     opds_root_url: str | None = None
     theme: str | None = None
-    max_width: int | None = None  # reading column width; None = full width
+    max_width: int | None = None
 
 
 def load_config(paths: Paths) -> Config:
@@ -56,22 +68,40 @@ def load_config(paths: Paths) -> Config:
         return Config()
 
     data = toml.load(paths.config_file)
+
+    library_dirs = data.get("library_dirs")
+    if library_dirs is None:
+        legacy_single_dir = data.get("library_dir")
+        library_dirs = [legacy_single_dir] if legacy_single_dir else []
+
+    # Backward compatibility: migrate old singular opds_root_url into the
+    # new opds_servers list, giving it no nickname (falls back to showing
+    # the URL itself in any server picker).
+    raw_servers = data.get("opds_servers")
+    if raw_servers is not None:
+        opds_servers = [OPDSServerConfig(url=s["url"], name=s.get("name")) for s in raw_servers]
+    else:
+        legacy_url = data.get("opds_root_url")
+        opds_servers = [OPDSServerConfig(url=legacy_url)] if legacy_url else []
+
     return Config(
-        library_dir=data.get("library_dir"),
-        opds_root_url=data.get("opds_root_url"),
+        library_dirs=library_dirs,
+        opds_servers=opds_servers,
         theme=data.get("theme"),
         max_width=data.get("max_width"),
     )
 
-
 def save_config(paths: Paths, config: Config) -> None:
     data = {
-        "library_dir": config.library_dir,
-        "opds_root_url": config.opds_root_url,
+        "library_dirs": config.library_dirs,
+        "opds_servers": [
+            {"url": s.url, **({"name": s.name} if s.name else {})}
+            for s in config.opds_servers
+        ],
         "theme": config.theme,
         "max_width": config.max_width,
     }
-    data = {k: v for k, v in data.items() if v is not None}
+    data = {k: v for k, v in data.items() if v is not None and v != []}
 
     with open(paths.config_file, "w") as f:
         toml.dump(data, f)

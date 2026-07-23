@@ -359,11 +359,12 @@ class KnossosApp(App):
         ("ctrl+t", "toggle_theme", "Toggle theme"),
     ]
 
-    def __init__(self, library_dir: Path) -> None:
+    def __init__(self, library_dirs: Path) -> None:
         super().__init__()
-        self.library_dir = library_dir
+        self.library_dirs = library_dirs
         self.paths = get_paths()
         self.config = load_config(self.paths)
+        self.current_opds_server_index = 0
 
     def on_mount(self) -> None:
         for theme in ALL_THEMES:
@@ -375,7 +376,7 @@ class KnossosApp(App):
         else:
             self.theme = "textual-dark"
 
-        self.push_screen(LibraryScreen(self.library_dir))  
+        self.push_screen(LibraryScreen(self.library_dirs))  
     
 
     def action_toggle_theme(self) -> None:
@@ -391,21 +392,40 @@ class KnossosApp(App):
         self.push_screen(ReaderScreen(book_path))
 
     def open_opds_browser(self) -> None:
-        self.push_screen(OPDSScreen())
+        if not self.config.opds_servers:
+            self.notify("No OPDS servers configured.")
+            return
+        server = self.config.opds_servers[self.current_opds_server_index]
+        self.push_screen(OPDSScreen(root_url=server.url))
+
+    def switch_opds_server(self) -> None:
+        """Cycle to the next configured server and re-open the browser on it."""
+        if len(self.config.opds_servers) <= 1:
+            self.notify("Only one OPDS server configured.")
+            return
+        self.current_opds_server_index = (self.current_opds_server_index + 1) % len(self.config.opds_servers)
+        server = self.config.opds_servers[self.current_opds_server_index]
+        self.notify(f"Switched to: {server.display_name}")
+        self.pop_screen()
+        self.push_screen(OPDSScreen(root_url=server.url))
+
+
+
 def main() -> None:
     paths = get_paths()
     config = load_config(paths)
 
     if len(sys.argv) >= 2:
-        library_dir = Path(sys.argv[1])
-    elif config.library_dir:
-        library_dir = Path(config.library_dir)
+        library_dirs = [Path(sys.argv[1])]
+    elif config.library_dirs:
+        library_dirs = [Path(d) for d in config.library_dirs]
     else:
         print("Usage: knossos <path-to-library-directory>")
-        print("(or set a default library_dir in your config file)")
+        print("(or set library_dirs in your config file)")
         sys.exit(1)
 
-    KnossosApp(library_dir).run()
+    KnossosApp(library_dirs).run()
+
 
 
 if __name__ == "__main__":

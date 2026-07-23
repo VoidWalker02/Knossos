@@ -30,6 +30,7 @@ class OPDSScreen(Screen):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("escape", "go_back", "Back"),
+        ("s", "switch_server", "Switch server")
     ]
 
     def __init__(self, root_url: str | None = None) -> None:
@@ -88,6 +89,9 @@ class OPDSScreen(Screen):
         self.notify(f"Downloaded to {saved_path.name}")
 
         self.app.open_book(saved_path)
+
+    def action_switch_server(self) -> None:
+        self.app.switch_opds_server()
 
     def action_go_back(self) -> None:
         if self.feed_stack:
