@@ -10,6 +10,8 @@ dependencies = [
     "lxml",
     "html2text",
     "platformdirs",
+    "httpx",
+    "toml",
 
 ]
 

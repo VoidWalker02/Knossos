@@ -30,6 +30,8 @@ from knossos.db import (
 )
 from knossos.ui.screens.library import LibraryScreen
 
+from knossos.ui.screens.opds import OPDSScreen
+
 
 class ReaderScreen(Screen):
     """The actual reading view. Paging, TOC, scroll memory, progress persistence."""
@@ -244,6 +246,9 @@ class KnossosApp(App):
 
     def open_book(self, book_path: Path) -> None:
         self.push_screen(ReaderScreen(book_path))
+
+    def open_opds_browser(self) -> None:
+        self.push_screen(OPDSScreen())
 
 
 def main() -> None:

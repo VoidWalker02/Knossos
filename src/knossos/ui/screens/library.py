@@ -16,6 +16,7 @@ class LibraryScreen(Screen):
 
     BINDINGS = [
         ("q", "quit", "Quit"),
+        ("o", "open_opds", "Browse OPDS"),
     ]
 
     def __init__(self, library_dir: Path) -> None:
@@ -43,3 +44,11 @@ class LibraryScreen(Screen):
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         self.app.open_book(event.item.book_path)
+
+    def action_open_opds(self) -> None:
+        self.app.open_opds_browser()
+
+    def action_quit(self) -> None:
+        self.app.exit()
+
+
