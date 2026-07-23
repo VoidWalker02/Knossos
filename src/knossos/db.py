@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS progress (
     PRIMARY KEY (book_id)
 );
 
+CREATE TABLE IF NOT EXISTS annotations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id         INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    chapter_index   INTEGER NOT NULL,
+    excerpt         TEXT NOT NULL,
+    note            TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+
 CREATE TABLE IF NOT EXISTS bookmarks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     book_id         INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -33,6 +43,8 @@ CREATE TABLE IF NOT EXISTS bookmarks (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
+
+
 
 
 """Currently the only ID for a book is its provided PATH, which is BAD and
@@ -141,6 +153,42 @@ def delete_bookmark(conn: sqlite3.Connection, bookmark_id: int) -> None:
     """Remove a bookmark by its id."""
     conn.execute("DELETE FROM bookmarks WHERE id = ?", (bookmark_id,))
     conn.commit()
+
+
+
+def add_annotation(
+    conn: sqlite3.Connection,
+    book_id: int,
+    chapter_index: int,
+    excerpt: str,
+    note: str | None = None,
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO annotations (book_id, chapter_index, excerpt, note)
+        VALUES (?, ?, ?, ?)
+        """,
+        (book_id, chapter_index, excerpt, note),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def list_annotations(conn: sqlite3.Connection, book_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT id, chapter_index, excerpt, note, created_at
+        FROM annotations
+        WHERE book_id = ?
+        ORDER BY created_at DESC
+        """,
+        (book_id,),
+    ).fetchall()
+
+
+def delete_annotation(conn: sqlite3.Connection, annotation_id: int) -> None:
+    conn.execute("DELETE FROM annotations WHERE id = ?", (annotation_id,))
+    conn.commit() 
 
 
 

@@ -11,7 +11,8 @@ from textual.widgets import Footer, Header, Static, ListView, ListItem, Label
 from textual.screen import Screen
 
 from knossos.config import get_paths
-from knossos.db import connect, get_or_create_book, save_progress, load_progress
+from knossos.db import connect, get_or_create_book, save_progress, load_progress, add_annotation, list_annotations, delete_annotation
+
 from knossos.epub.book import (
     load_book,
     get_metadata,
@@ -69,6 +70,8 @@ class ReaderScreen(Screen):
         ("slash", "start_search", "Search"),
         ("+", "widen_text", "Widen text"),
         ("-", "narrow_text", "Narrow text"),
+        ("h", "start_highlight", "Highlight paragraph"),
+        ("H", "toggle_annotations", "View annotations"),
         ("escape", "back_to_library", "Library"),
     ]
 
@@ -93,6 +96,11 @@ class ReaderScreen(Screen):
         with Vertical(id="search-panel"):
             yield Input(placeholder="Search this book...", id="search-input")
             yield ListView(id="search-results")
+
+        yield ListView(id="highlight-picker")
+        with Vertical(id="highlight-note-bar"):
+            yield Input(placeholder="Optional note (Enter to save, empty is fine)...", id="highlight-note-input")
+        yield ListView(id="annotations-panel")    
         yield Footer()
 
     def on_mount(self) -> None:
@@ -127,6 +135,11 @@ class ReaderScreen(Screen):
         self.query_one("#toc-panel", ListView).display = False
         self.query_one("#bookmarks-panel", ListView).display = False
         self.query_one("#search-panel", Vertical).display = False
+
+        self.query_one("#highlight-picker", ListView).display = False
+        self.query_one("#highlight-note-bar", Vertical).display = False
+        self.query_one("#annotations-panel", ListView).display = False
+        self._pending_highlight_text: str | None = None
 
         self.render_current_chapter()
 
@@ -218,6 +231,22 @@ class ReaderScreen(Screen):
         search_panel.display = True
         self.query_one("#search-input", Input).focus()
 
+    def action_start_highlight(self) -> None:
+        chapter = self.chapters[self.current_index]
+        paragraphs = [p.strip() for p in chapter_to_text(chapter).split("\n\n") if p.strip()]
+
+        picker = self.query_one("#highlight-picker", ListView)
+        picker.clear()
+        for para in paragraphs:
+            preview = para[:100] + ("…" if len(para) > 100 else "")
+            item = ListItem(Label(preview))
+            item.full_text = para
+            picker.append(item)
+
+        self.query_one("#reader-pane", VerticalScroll).display = False
+        picker.display = True
+        picker.focus()    
+
 
     def _chapter_title_for(self, chapter_index: int) -> str:
         """Best-effort human-readable label for a chapter, using the TOC
@@ -250,20 +279,26 @@ class ReaderScreen(Screen):
             panel.append(item)
 
     def action_delete_bookmark(self) -> None:
-        panel = self.query_one("#bookmarks-panel", ListView)
+        bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
+        annotations_panel = self.query_one("#annotations-panel", ListView)
 
-        # Only meaningful while the bookmarks panel is open and something's highlighted.
-        if not panel.display:
+        if bookmarks_panel.display:
+            highlighted = bookmarks_panel.highlighted_child
+            if highlighted is not None:
+                delete_bookmark(self.db_conn, highlighted.bookmark_id)
+                self.notify("Bookmark deleted")
+                self._refresh_bookmarks_panel()
             return
 
-        highlighted = panel.highlighted_child
-        if highlighted is None:
+        if annotations_panel.display:
+            highlighted = annotations_panel.highlighted_child
+            if highlighted is not None:
+                delete_annotation(self.db_conn, highlighted.annotation_id)
+                self.notify("Annotation deleted")
+                self._refresh_annotations_panel()
             return
 
-        delete_bookmark(self.db_conn, highlighted.bookmark_id)
-        self.notify("Bookmark deleted")
-        self._refresh_bookmarks_panel()
-
+        
     def action_toggle_toc(self) -> None:
         toc_panel = self.query_one("#toc-panel", ListView)
         reader_pane = self.query_one("#reader-pane", VerticalScroll)
@@ -271,48 +306,64 @@ class ReaderScreen(Screen):
         toc_panel.display = not showing
         reader_pane.display = showing
 
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        toc_panel = self.query_one("#toc-panel", ListView)
-        bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
-
-        self._save_scroll_position()
-
-        if event.list_view is toc_panel:
-            self.current_index = event.item.chapter_position
-            self.action_toggle_toc()
-        elif event.list_view is bookmarks_panel:
-            self.current_index = event.item.chapter_index
-            self.scroll_positions[self.current_index] = event.item.scroll_y
-            self.action_toggle_bookmarks()
-
-        self.render_current_chapter()
-
+   
     def action_back_to_library(self) -> None:
         search_panel = self.query_one("#search-panel", Vertical)
         toc_panel = self.query_one("#toc-panel", ListView)
         bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
+        highlight_picker = self.query_one("#highlight-picker", ListView)
+        highlight_note_bar = self.query_one("#highlight-note-bar", Vertical)
+        annotations_panel = self.query_one("#annotations-panel", ListView)
 
         if search_panel.display:
             self._close_search()
             return
-
         if toc_panel.display:
             self.action_toggle_toc()
             return
-
         if bookmarks_panel.display:
             self.action_toggle_bookmarks()
             return
+        if highlight_picker.display:
+            highlight_picker.display = False
+            self.query_one("#reader-pane", VerticalScroll).display = True
+            return
+        if highlight_note_bar.display:
+            highlight_note_bar.display = False
+            self.query_one("#reader-pane", VerticalScroll).display = True
+            self._pending_highlight_text = None
+            return
+        if annotations_panel.display:
+            self.action_toggle_annotations()
+            return
 
-        # Nothing overlaying the reader — actually leave to the library.
-        self._persist_progress()    
-        self.app.pop_screen()
+        self._persist_progress()
+        self.app.pop_screen()    
     
+
+
     def action_quit(self) -> None:
         self._persist_progress()
         self.app.exit()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        # Annotation note being saved
+        if event.input.id == "highlight-note-input":
+            note = event.value.strip() or None
+            add_annotation(
+                self.db_conn,
+                self.book_id,
+                chapter_index=self.current_index,
+                excerpt=self._pending_highlight_text,
+                note=note,
+            )
+            self.notify("Annotation saved.")
+            self._pending_highlight_text = None
+            self.query_one("#highlight-note-bar", Vertical).display = False
+            self.query_one("#reader-pane", VerticalScroll).display = True
+            return
+
+        # Book search query being submitted
         query = event.value
         chapter_titles = {entry.chapter_position: entry.title for entry in self.toc}
         results = search_book(self.chapters, query, chapter_titles=chapter_titles)
@@ -320,7 +371,7 @@ class ReaderScreen(Screen):
         results_list = self.query_one("#search-results", ListView)
         results_list.clear()
 
-        for result in results[:50]:  # cap displayed results to keep the panel usable
+        for result in results[:50]:
             item = ListItem(Label(f"[{result.chapter_title}] {result.snippet}"))
             item.chapter_index = result.chapter_index
             results_list.append(item)
@@ -331,6 +382,19 @@ class ReaderScreen(Screen):
         toc_panel = self.query_one("#toc-panel", ListView)
         bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
         search_results = self.query_one("#search-results", ListView)
+        highlight_picker = self.query_one("#highlight-picker", ListView)
+        annotations_panel = self.query_one("#annotations-panel", ListView)
+
+        # Highlight picker: a paragraph was chosen, prompt for a note. Handled
+        # separately (return early) since it opens the note input rather than
+        # jumping chapters like the other panels.
+        if event.list_view is highlight_picker:
+            self._pending_highlight_text = event.item.full_text
+            highlight_picker.display = False
+            note_bar = self.query_one("#highlight-note-bar", Vertical)
+            note_bar.display = True
+            self.query_one("#highlight-note-input", Input).focus()
+            return
 
         self._save_scroll_position()
 
@@ -344,8 +408,35 @@ class ReaderScreen(Screen):
         elif event.list_view is search_results:
             self.current_index = event.item.chapter_index
             self._close_search()
+        elif event.list_view is annotations_panel:
+            self.current_index = event.item.chapter_index
+            self.action_toggle_annotations()
 
-        self.render_current_chapter()
+        self.render_current_chapter() 
+
+    def action_toggle_annotations(self) -> None:
+        panel = self.query_one("#annotations-panel", ListView)
+        reader_pane = self.query_one("#reader-pane", VerticalScroll)
+        showing = panel.display
+
+        if not showing:
+            self._refresh_annotations_panel()
+
+        panel.display = not showing
+        reader_pane.display = showing
+
+    def _refresh_annotations_panel(self) -> None:
+        panel = self.query_one("#annotations-panel", ListView)
+        panel.clear()
+        for row in list_annotations(self.db_conn, self.book_id):
+            preview = row["excerpt"][:80] + ("…" if len(row["excerpt"]) > 80 else "")
+            label_text = preview
+            if row["note"]:
+                label_text += f"\n[dim]Note: {row['note']}[/dim]"
+            item = ListItem(Label(label_text))
+            item.annotation_id = row["id"]
+            item.chapter_index = row["chapter_index"]
+            panel.append(item)    
 
     def _close_search(self) -> None:
         self.query_one("#search-panel", Vertical).display = False
@@ -359,12 +450,14 @@ class KnossosApp(App):
         ("ctrl+t", "toggle_theme", "Toggle theme"),
     ]
 
-    def __init__(self, library_dirs: Path) -> None:
+    
+    def __init__(self, library_dirs: list[Path]) -> None:
         super().__init__()
         self.library_dirs = library_dirs
         self.paths = get_paths()
         self.config = load_config(self.paths)
         self.current_opds_server_index = 0
+        self._theme_restored = False  # guards against saving during initial load
 
     def on_mount(self) -> None:
         for theme in ALL_THEMES:
@@ -376,14 +469,26 @@ class KnossosApp(App):
         else:
             self.theme = "textual-dark"
 
-        self.push_screen(LibraryScreen(self.library_dirs))  
+        self._theme_restored = True  # from here on, any theme change should persist
+        self.push_screen(LibraryScreen(self.library_dirs)) 
     
+
+    
+    def watch_theme(self, old_theme: str, new_theme: str) -> None:
+        """Called automatically by Textual whenever self.theme changes —
+        whether from our own action_toggle_theme, the command palette's
+        theme picker, or anywhere else. Persists the choice either way."""
+        if not self._theme_restored:
+            return  # don't re-save the value we just loaded from config on startup
+        self.config.theme = new_theme
+        save_config(self.paths, self.config)
 
     def action_toggle_theme(self) -> None:
         self.theme = "textual-light" if self.theme == "textual-dark" else "textual-dark"
-        self.config.theme = self.theme
-        save_config(self.paths, self.config)
-        self.notify(f"Theme: {self.config.theme}")
+        self.notify(f"Theme: {self.theme}")
+        # No need to call save_config here anymore — watch_theme handles it
+        # automatically now that it fires on every theme change.
+
 
      
      
