@@ -18,6 +18,7 @@ from knossos.epub.book import (
     get_reading_order,
     get_toc,
     chapter_to_text,
+    chapter_to_markup,
 )
 from knossos.db import (
     connect,
@@ -33,11 +34,29 @@ from knossos.ui.screens.library import LibraryScreen
 from knossos.ui.screens.opds import OPDSScreen
 
 
-from knossos.config import get_paths, load_config
+from knossos.config import get_paths, load_config, save_config
 
+from textual.widgets import Input
+from textual.containers import Vertical
+
+from knossos.epub.search import search_book, SearchResult
+
+from knossos.themes import ALL_THEMES
+
+DEFAULT_MAX_WIDTH = 80
+MIN_MAX_WIDTH = 40
+MAX_MAX_WIDTH = 200
+WIDTH_STEP = 5
 
 class ReaderScreen(Screen):
     """The actual reading view. Paging, TOC, scroll memory, progress persistence."""
+
+
+    CSS = """
+    ReaderScreen {
+        align: center top;
+    }
+    """
 
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -47,6 +66,9 @@ class ReaderScreen(Screen):
         ("b", "add_bookmark", "Add bookmark"),
         ("B", "toggle_bookmarks", "View bookmarks"),
         ("d", "delete_bookmark", "Delete bookmark"),
+        ("slash", "start_search", "Search"),
+        ("+", "widen_text", "Widen text"),
+        ("-", "narrow_text", "Narrow text"),
         ("escape", "back_to_library", "Library"),
     ]
 
@@ -59,6 +81,8 @@ class ReaderScreen(Screen):
         self.scroll_positions: dict[int, float] = {}
         self.db_conn = None
         self.book_id: int | None = None
+        self.max_width = DEFAULT_MAX_WIDTH  # actual value set in on_mount from config
+
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -66,6 +90,9 @@ class ReaderScreen(Screen):
             yield Static(id="reader-content")
         yield ListView(id="toc-panel")
         yield ListView(id="bookmarks-panel")
+        with Vertical(id="search-panel"):
+            yield Input(placeholder="Search this book...", id="search-input")
+            yield ListView(id="search-results")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -92,9 +119,15 @@ class ReaderScreen(Screen):
         else:
             self.current_index = 0
 
+        app_config = self.app.config
+        self.max_width = app_config.max_width or DEFAULT_MAX_WIDTH
+        self._apply_reader_width()
+
         self.build_toc_panel()
         self.query_one("#toc-panel", ListView).display = False
         self.query_one("#bookmarks-panel", ListView).display = False
+        self.query_one("#search-panel", Vertical).display = False
+
         self.render_current_chapter()
 
     def build_toc_panel(self) -> None:
@@ -107,7 +140,7 @@ class ReaderScreen(Screen):
 
     def render_current_chapter(self) -> None:
         chapter = self.chapters[self.current_index]
-        text = chapter_to_text(chapter)
+        text = chapter_to_markup(chapter)
         self.query_one("#reader-content", Static).update(text)
         self.sub_title = f"Chapter {self.current_index + 1} / {len(self.chapters)}"
 
@@ -146,6 +179,25 @@ class ReaderScreen(Screen):
             self.current_index -= 1
             self.render_current_chapter()
 
+    def _apply_reader_width(self) -> None:
+        reader_pane = self.query_one("#reader-pane", VerticalScroll)
+        reader_pane.styles.width = self.max_width
+
+    def action_widen_text(self) -> None:
+        self.max_width = min(self.max_width + WIDTH_STEP, MAX_MAX_WIDTH)
+        self._apply_reader_width()
+        self._save_max_width()
+
+    def action_narrow_text(self) -> None:
+        self.max_width = max(self.max_width - WIDTH_STEP, MIN_MAX_WIDTH)
+        self._apply_reader_width()
+        self._save_max_width()
+
+    def _save_max_width(self) -> None:
+        self.app.config.max_width = self.max_width
+        save_config(self.app.paths, self.app.config)
+        self.notify(f"Text width: {self.max_width}")
+
     def action_add_bookmark(self) -> None:
         reader_pane = self.query_one("#reader-pane", VerticalScroll)
         chapter_title = self._chapter_title_for(self.current_index)
@@ -157,6 +209,14 @@ class ReaderScreen(Screen):
             label=chapter_title,
         )
         self.notify(f"Bookmark added: {chapter_title}")
+
+    def action_start_search(self) -> None:
+        reader_pane = self.query_one("#reader-pane", VerticalScroll)
+        search_panel = self.query_one("#search-panel", Vertical)
+
+        reader_pane.display = False
+        search_panel.display = True
+        self.query_one("#search-input", Input).focus()
 
 
     def _chapter_title_for(self, chapter_index: int) -> str:
@@ -228,32 +288,110 @@ class ReaderScreen(Screen):
         self.render_current_chapter()
 
     def action_back_to_library(self) -> None:
-        self._persist_progress()
-        self.app.pop_screen()
+        search_panel = self.query_one("#search-panel", Vertical)
+        toc_panel = self.query_one("#toc-panel", ListView)
+        bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
 
+        if search_panel.display:
+            self._close_search()
+            return
+
+        if toc_panel.display:
+            self.action_toggle_toc()
+            return
+
+        if bookmarks_panel.display:
+            self.action_toggle_bookmarks()
+            return
+
+        # Nothing overlaying the reader — actually leave to the library.
+        self._persist_progress()    
+        self.app.pop_screen()
+    
     def action_quit(self) -> None:
         self._persist_progress()
         self.app.exit()
 
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        query = event.value
+        chapter_titles = {entry.chapter_position: entry.title for entry in self.toc}
+        results = search_book(self.chapters, query, chapter_titles=chapter_titles)
+
+        results_list = self.query_one("#search-results", ListView)
+        results_list.clear()
+
+        for result in results[:50]:  # cap displayed results to keep the panel usable
+            item = ListItem(Label(f"[{result.chapter_title}] {result.snippet}"))
+            item.chapter_index = result.chapter_index
+            results_list.append(item)
+
+        results_list.focus()
+    
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        toc_panel = self.query_one("#toc-panel", ListView)
+        bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
+        search_results = self.query_one("#search-results", ListView)
+
+        self._save_scroll_position()
+
+        if event.list_view is toc_panel:
+            self.current_index = event.item.chapter_position
+            self.action_toggle_toc()
+        elif event.list_view is bookmarks_panel:
+            self.current_index = event.item.chapter_index
+            self.scroll_positions[self.current_index] = event.item.scroll_y
+            self.action_toggle_bookmarks()
+        elif event.list_view is search_results:
+            self.current_index = event.item.chapter_index
+            self._close_search()
+
+        self.render_current_chapter()
+
+    def _close_search(self) -> None:
+        self.query_one("#search-panel", Vertical).display = False
+        self.query_one("#reader-pane", VerticalScroll).display = True 
+
+# knossos/app.py (changes to KnossosApp)
 
 class KnossosApp(App):
-    """Top-level app: starts on the library screen, opens books into a
-    reader screen, and can return to the library from there."""
+
+    BINDINGS = [
+        ("ctrl+t", "toggle_theme", "Toggle theme"),
+    ]
 
     def __init__(self, library_dir: Path) -> None:
         super().__init__()
         self.library_dir = library_dir
+        self.paths = get_paths()
+        self.config = load_config(self.paths)
 
     def on_mount(self) -> None:
-        self.push_screen(LibraryScreen(self.library_dir))
+        for theme in ALL_THEMES:
+            self.register_theme(theme)
 
+        configured_theme = self.config.theme
+        if configured_theme in self.available_themes:
+            self.theme = configured_theme
+        else:
+            self.theme = "textual-dark"
+
+        self.push_screen(LibraryScreen(self.library_dir))  
+    
+
+    def action_toggle_theme(self) -> None:
+        self.theme = "textual-light" if self.theme == "textual-dark" else "textual-dark"
+        self.config.theme = self.theme
+        save_config(self.paths, self.config)
+        self.notify(f"Theme: {self.config.theme}")
+
+     
+     
+    
     def open_book(self, book_path: Path) -> None:
         self.push_screen(ReaderScreen(book_path))
 
     def open_opds_browser(self) -> None:
         self.push_screen(OPDSScreen())
-
-
 def main() -> None:
     paths = get_paths()
     config = load_config(paths)

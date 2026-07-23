@@ -41,18 +41,17 @@ def get_paths() -> Paths:
 import toml
 
 
+# knossos/config.py (changes to Config)
+
 @dataclass
 class Config:
     library_dir: str | None = None
     opds_root_url: str | None = None
+    theme: str | None = None
+    max_width: int | None = None  # reading column width; None = full width
 
 
 def load_config(paths: Paths) -> Config:
-    """
-    Load user config from disk, falling back to defaults for any missing
-    or absent fields. Never raises if the file doesn't exist yet, so a
-    fresh install should just get an empty/default Config.
-    """
     if not paths.config_file.exists():
         return Config()
 
@@ -60,18 +59,18 @@ def load_config(paths: Paths) -> Config:
     return Config(
         library_dir=data.get("library_dir"),
         opds_root_url=data.get("opds_root_url"),
+        theme=data.get("theme"),
+        max_width=data.get("max_width"),
     )
 
 
 def save_config(paths: Paths, config: Config) -> None:
-    """Write the given config to disk, overwriting any existing file."""
     data = {
         "library_dir": config.library_dir,
         "opds_root_url": config.opds_root_url,
+        "theme": config.theme,
+        "max_width": config.max_width,
     }
-    # Drop keys with None values so an unset field doesn't get written as
-    # `key = "None"` or similar, keeps the file clean for fields the user
-    # hasn't configured yet.
     data = {k: v for k, v in data.items() if v is not None}
 
     with open(paths.config_file, "w") as f:

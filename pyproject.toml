@@ -12,6 +12,7 @@ dependencies = [
     "platformdirs",
     "httpx",
     "toml",
+    "lxml",
 
 ]
 

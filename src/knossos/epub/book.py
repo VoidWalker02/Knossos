@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import ebooklib
+import re
 from ebooklib import epub
+from lxml import etree, html as lxml_html
 
 
 @dataclass
@@ -77,6 +79,61 @@ def chapter_to_text(chapter: Chapter) -> str:
     converter.ignore_images = True
     return converter.handle(chapter.content)
 
+# Some EPUBs (notably ones exported from Adobe InDesign) mark emphasis via
+# CSS classes on <span> elements instead of semantic <em>/<strong> tags.
+# html2text only recognizes the semantic tags, so we normalize these known
+# class names into real semantic elements before conversion.
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|_(.+?)_")
+
+_EMPHASIS_CLASS_MAP = {
+    "italic": "em",
+    "bold": "strong",
+}
+
+
+
+def _normalize_emphasis_spans(xhtml_content: str) -> str:
+    """Rewrite <span class="Italic/Bold"> (case-insensitive) into <em>/<strong>."""
+    try:
+        tree = lxml_html.fromstring(xhtml_content.encode("utf-8"))
+    except (etree.ParserError, ValueError):
+        # Malformed/unusual markup — fall back to original content rather
+        # than crashing the whole chapter conversion over a formatting nicety.
+        return xhtml_content
+
+    for span in tree.xpath("//span[@class]"):
+        class_name = (span.get("class") or "").strip().lower()
+        tag_name = _EMPHASIS_CLASS_MAP.get(class_name)
+        if tag_name is not None:
+            span.tag = tag_name
+            del span.attrib["class"]
+
+    return etree.tostring(tree, encoding="unicode", method="html")
+
+
+def chapter_to_markup(chapter: Chapter) -> str:
+    normalized_content = _normalize_emphasis_spans(chapter.content)
+
+    converter = html2text.HTML2Text()
+    converter.body_width = 0
+    converter.ignore_links = True
+    converter.ignore_images = True
+    markdown_text = converter.handle(normalized_content)
+
+    # Drop empty emphasis markers left behind when the only content inside
+    # was an image (which we strip via ignore_images).
+    markdown_text = re.sub(r"\*\*\s*\*\*", "", markdown_text)
+    markdown_text = re.sub(r"\*\s*\*", "", markdown_text)
+
+    escaped = markdown_text.replace("[", "\\[")
+    escaped = _BOLD_RE.sub(r"[bold]\1[/bold]", escaped)
+    escaped = _ITALIC_RE.sub(
+        lambda m: f"[italic]{m.group(1) or m.group(2)}[/italic]", escaped
+    )
+
+    return escaped
 
 
 @dataclass
