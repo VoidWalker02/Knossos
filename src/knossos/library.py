@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from textual.containers import Vertical
 
@@ -16,6 +16,7 @@ class LibraryEntry:
     author: str | None
     source_dir: Path
     identifier: str | None = None
+    duplicate_paths: list[Path] = field(default_factory=list)
 
 def scan_directory(directory: Path) -> list[LibraryEntry]:
     """
@@ -43,33 +44,37 @@ def scan_directory(directory: Path) -> list[LibraryEntry]:
     return entries
 
 def scan_libraries(directories: list[Path]) -> list[LibraryEntry]:
-
-    """Scan multiple directories and merge results, deduplicating by resolved path
-
-    in case the same book is reachable from more than one configured folder."""
-
     seen_paths: set[Path] = set()
-
     entries: list[LibraryEntry] = []
 
     for directory in directories:
-
         if not directory.exists():
-
-            continue  # a configured folder might be an unmounted drive, etc.
-
+            continue
         for entry in scan_directory(directory):
-
             resolved = entry.path.resolve()
-
             if resolved in seen_paths:
-
                 continue
-
             seen_paths.add(resolved)
-
             entries.append(entry)
 
+    _annotate_duplicates(entries)
     return sorted(entries, key=lambda e: e.title)
 
+
+def _annotate_duplicates(entries: list[LibraryEntry]) -> None:
+    """
+    Group entries by identifier and record when the same book (by EPUB
+    identifier) appears at more than one path — e.g. copies in two
+    different configured library folders. Entries with no identifier are
+    skipped, since we have no reliable way to know they're duplicates.
+    """
+    by_identifier: dict[str, list[LibraryEntry]] = {}
+    for entry in entries:
+        if entry.identifier:
+            by_identifier.setdefault(entry.identifier, []).append(entry)
+
+    for group in by_identifier.values():
+        if len(group) > 1:
+            for entry in group:
+                entry.duplicate_paths = [e.path for e in group if e.path != entry.path]    
 

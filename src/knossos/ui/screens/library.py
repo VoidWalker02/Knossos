@@ -225,7 +225,7 @@ class LibraryScreen(Screen):
     
 
     def _show_details(self, entry: LibraryEntry) -> None:
-        book_id = book_id = get_book_id_by_identity(self.db_conn, entry.identifier, str(entry.path.resolve()))
+        book_id = get_book_id_by_identity(self.db_conn, entry.identifier, str(entry.path.resolve()))
         progress_line = "Not started yet."
         if book_id is not None:
             progress = load_progress(self.db_conn, book_id)
@@ -238,10 +238,16 @@ class LibraryScreen(Screen):
             f"Author: {entry.author or 'Unknown'}\n"
             f"Source: {entry.source_dir.name}\n\n"
             f"{progress_line}\n\n"
-            f"[dim]{entry.path}[/dim]"
         )
-        self.query_one("#details-content", Static).update(details)
 
+        if entry.duplicate_paths:
+            details += f"[yellow]⚠ Also found in {len(entry.duplicate_paths)} other location(s):[/yellow]\n"
+            for dup_path in entry.duplicate_paths:
+                details += f"  [dim]{dup_path}[/dim]\n"
+            details += "\n"
+
+        details += f"[dim]{entry.path}[/dim]"
+        self.query_one("#details-content", Static).update(details)
 
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
