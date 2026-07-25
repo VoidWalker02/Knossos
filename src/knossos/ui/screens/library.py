@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rich.text import Text
+
+
 from textual.screen import Screen
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
@@ -125,16 +128,36 @@ class LibraryScreen(Screen):
         table.clear()
         self.row_key_to_entry = {}
 
+        if mode == "source":
+            self._populate_grouped_by_source(table, entries)
+        else:
+            self._populate_flat(table, entries)
+
+
+
+    def _populate_flat(self, table: DataTable, entries: list[LibraryEntry]) -> None:
         for entry in entries:
             row_key = str(entry.path)
-            table.add_row(
-                entry.title,
-                entry.author or "—",
-                entry.source_dir.name,
-                key=row_key,
-            )
-            
+            table.add_row(entry.title, entry.author or "—", entry.source_dir.name, key=row_key)
             self.row_key_to_entry[row_key] = entry
+
+    def _populate_grouped_by_source(self, table: DataTable, entries: list[LibraryEntry]) -> None:
+        current_source: Path | None = None
+        header_index = 0
+
+        for entry in entries:
+            if entry.source_dir != current_source:
+                current_source = entry.source_dir
+                header_index += 1
+                header_text = Text(f"— {current_source} —", style="bold italic $accent")
+                # Header rows get a distinct, unmatched key prefix so they're
+                # never looked up in row_key_to_entry (and therefore never
+                # "openable" — selecting one is silently a no-op).
+                table.add_row(header_text, "", "", key=f"header:{header_index}")
+
+            row_key = str(entry.path)
+            table.add_row(entry.title, entry.author or "—", "", key=row_key)
+            self.row_key_to_entry[row_key] = entry         
     
 
 
