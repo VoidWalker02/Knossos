@@ -33,6 +33,7 @@ from knossos.db import (
     add_bookmark,
     list_bookmarks,
     delete_bookmark,
+    update_annotation_note,
 )
 from knossos.ui.screens.library import LibraryScreen
 
@@ -85,6 +86,7 @@ class ReaderScreen(Screen):
         ("-", "narrow_text", "Narrow text"),
         ("h", "start_highlight", "Highlight paragraph"),
         ("H", "toggle_annotations", "View annotations"),
+        ("r", "edit_annotation", "Edit note"),
         ("[", "decrease_spacing", "Less spacing"),
         ("]", "increase_spacing", "More spacing"),
         ("z", "start_dictionary_lookup", "Look up word"),
@@ -414,9 +416,11 @@ class ReaderScreen(Screen):
         if highlight_note_bar.display:
             highlight_note_bar.display = False
             self.query_one("#reader-pane", VerticalScroll).display = True
+            self.query_one("#highlight-note-input", Input).value = ""
             self._pending_highlight_text = None
             self._pending_highlight_paragraph_index = None
-            return
+            self._editing_annotation_id = None
+            return        
         if annotations_panel.display:
             self.action_toggle_annotations()
             return
@@ -446,21 +450,30 @@ class ReaderScreen(Screen):
 
         if event.input.id == "highlight-note-input":
             note = event.value.strip() or None
-            add_annotation(
-                self.db_conn,
-                self.book_id,
-                chapter_index=self.current_index,
-                excerpt=self._pending_highlight_text,
-                note=note,
-                paragraph_index=self._pending_highlight_paragraph_index,
-            )
-            self.notify("Annotation saved.")
+
+            if self._editing_annotation_id is not None:
+                update_annotation_note(self.db_conn, self._editing_annotation_id, note)
+                self.notify("Annotation updated.")
+                self._editing_annotation_id = None
+            else:
+                add_annotation(
+                    self.db_conn,
+                    self.book_id,
+                    chapter_index=self.current_index,
+                    excerpt=self._pending_highlight_text,
+                    note=note,
+                    paragraph_index=self._pending_highlight_paragraph_index,
+                )
+                self.notify("Annotation saved.")
+
             self._pending_highlight_text = None
             self._pending_highlight_paragraph_index = None
+            self.query_one("#highlight-note-input", Input).value = ""
             self.query_one("#highlight-note-bar", Vertical).display = False
             self.query_one("#reader-pane", VerticalScroll).display = True
             self.render_current_chapter()
             return
+
 
         query = event.value
         chapter_titles = {entry.chapter_position: entry.title for entry in self.toc}
@@ -529,6 +542,7 @@ class ReaderScreen(Screen):
             item.annotation_id = row["id"]
             item.chapter_index = row["chapter_index"]
             item.paragraph_index = row["paragraph_index"]
+            item.note = row["note"]
             panel.append(item)    
 
     def _close_search(self) -> None:
@@ -542,6 +556,26 @@ class ReaderScreen(Screen):
         reader_pane.display = False
         dictionary_bar.display = True
         self.query_one("#dictionary-input", Input).focus()
+
+
+     
+    def action_edit_annotation(self) -> None:
+        annotations_panel = self.query_one("#annotations-panel", ListView)
+        if not annotations_panel.display:
+            return
+
+        highlighted = annotations_panel.highlighted_child
+        if highlighted is None:
+            return
+
+        self._editing_annotation_id = highlighted.annotation_id
+        note_input = self.query_one("#highlight-note-input", Input)
+        note_input.value = highlighted.note or ""
+
+        annotations_panel.display = False
+        self.query_one("#highlight-note-bar", Vertical).display = True
+        note_input.focus()
+
 
 
     async def _handle_dictionary_submit(self, word: str) -> None:

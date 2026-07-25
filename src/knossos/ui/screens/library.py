@@ -18,6 +18,8 @@ from knossos.config import get_paths
 from knossos.db import connect, get_book_id_by_identity, load_progress
 from knossos.db import get_most_recent_book
 from knossos.ui.screens.library_search import LibrarySearchScreen
+from knossos.ui.screens.marks import MarksScreen
+
 
 
 
@@ -52,6 +54,7 @@ class LibraryScreen(Screen):
         ("escape", "close_filter", "Close filter"),
         ("f", "full_search", "Search library"),
         ("c", "continue_reading", "Continue reading"),
+        ("m", "view_marks", "Your marks"),
 
     ]
    
@@ -169,6 +172,9 @@ class LibraryScreen(Screen):
         filter_bar = self.query_one("#filter-bar", Vertical)
         filter_bar.display = True
         self.query_one("#filter-input", Input).focus()
+
+    def action_view_marks(self) -> None:
+        self.app.push_screen(MarksScreen(self.db_conn))    
 
       
 

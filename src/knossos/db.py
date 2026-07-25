@@ -280,3 +280,35 @@ def get_book_id_by_identity(conn: sqlite3.Connection, identifier: str | None, pa
 
     row = conn.execute("SELECT id FROM books WHERE path = ?", (path,)).fetchone()
     return row["id"] if row else None
+
+
+def update_annotation_note(conn: sqlite3.Connection, annotation_id: int, note: str | None) -> None:
+    conn.execute("UPDATE annotations SET note = ? WHERE id = ?", (note, annotation_id))
+    conn.commit()
+
+
+
+def list_all_bookmarks(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT bookmarks.id, bookmarks.chapter_index, bookmarks.scroll_y,
+               bookmarks.label, bookmarks.created_at,
+               books.id AS book_id, books.path, books.title
+        FROM bookmarks
+        JOIN books ON books.id = bookmarks.book_id
+        ORDER BY bookmarks.created_at DESC
+        """
+    ).fetchall()
+
+
+def list_all_annotations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT annotations.id, annotations.chapter_index, annotations.excerpt,
+               annotations.note, annotations.paragraph_index, annotations.created_at,
+               books.id AS book_id, books.path, books.title
+        FROM annotations
+        JOIN books ON books.id = annotations.book_id
+        ORDER BY annotations.created_at DESC
+        """
+    ).fetchall()    
