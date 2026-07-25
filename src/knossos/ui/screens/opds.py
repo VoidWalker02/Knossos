@@ -16,6 +16,10 @@ from urllib.parse import quote
 from knossos.opds.client import fetch_feed, download_book
 from knossos.opds.feed import parse_feed, OPDSFeed, OPDSEntry
 from knossos.config import get_paths, load_config
+from knossos.opds.cache import get_cached_feed, set_cached_feed
+from knossos.opds.cache import _cache_path
+
+
 
 OPDS_ROOT_URL = "http://100.122.21.102:8080/opds"
 DOWNLOAD_DIR = Path(__file__).resolve().parents[3] / "opds_downloads"
@@ -101,8 +105,33 @@ class OPDSScreen(Screen):
         table.focus()
 
     
+    
     def load_feed(self, url: str) -> None:
-        xml = fetch_feed(url)
+        paths = get_paths()
+
+        cached = get_cached_feed(paths, url)
+        if cached is not None:
+            xml = cached
+        else:
+            try:
+                xml = fetch_feed(url)
+                set_cached_feed(paths, url, xml)
+            except OPDSFetchError as e:
+                # Network failed — try a stale cache as a last resort rather
+                # than failing outright, since browsing a slightly outdated
+                # catalog is better than not browsing at all.
+                stale = self._get_stale_cache_ignoring_ttl(paths, url)
+                if stale is not None:
+                    self.notify(f"{e} — showing cached copy.", severity="warning")
+                    xml = stale
+                else:
+                    self.notify(str(e), severity="error")
+                    if self.feed_stack:
+                        previous_url = self.feed_stack.pop()
+                        if previous_url != url:
+                            self.load_feed(previous_url)
+                    return
+
         self.current_feed = parse_feed(xml, url)
         self._current_url = url
 
@@ -115,11 +144,20 @@ class OPDSScreen(Screen):
 
         for index, entry in enumerate(self.current_feed.entries):
             kind = "Folder" if entry.is_navigation else "Book" if entry.is_acquisition else "?"
-            row_key = str(index)  # OPDS entries don't have a stable unique id we can rely on; index within this feed is fine
+            row_key = str(index)
             table.add_row(entry.title, kind, key=row_key)
             self.row_key_to_entry[row_key] = entry
 
         self.query_one("#opds-details-content", Static).update("Highlight an entry to see details.")
+
+
+    def _get_stale_cache_ignoring_ttl(self, paths, url: str) -> str | None:
+        """Like get_cached_feed, but ignores expiry — used only as a
+        network-failure fallback, never for normal browsing."""
+        from knossos.opds.cache import _cache_path
+        path = _cache_path(paths, url)
+        return path.read_text(encoding="utf-8") if path.exists() else None    
+
 
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:

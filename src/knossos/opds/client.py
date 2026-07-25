@@ -5,18 +5,28 @@ from __future__ import annotations
 import httpx
 
 
-def fetch_feed(url: str, timeout: float = 10.0) -> str:
-    """
-    Fetch a raw OPDS feed (Atom+XML) from the given URL.
+class OPDSFetchError(Exception):
+    """Raised when an OPDS feed can't be fetched — network failure, bad
+    status code, or an unreachable server. Callers should catch this and
+    show a friendly message rather than letting httpx's raw exception
+    surface to the user."""
 
-    Kept deliberately minimal for now: no auth, no retries, no caching.
-    Those can layer on top once we know the basic fetch/parse path works.
-    """
-    response = httpx.get(url, timeout=timeout)
-    response.raise_for_status()
+
+def fetch_feed(url: str, timeout: float = 10.0) -> str:
+    try:
+        response = httpx.get(url, timeout=timeout)
+        response.raise_for_status()
+    except httpx.TimeoutException as e:
+        raise OPDSFetchError(f"Server timed out: {url}") from e
+    except httpx.ConnectError as e:
+        raise OPDSFetchError(f"Couldn't connect to server: {url}") from e
+    except httpx.HTTPStatusError as e:
+        raise OPDSFetchError(f"Server returned an error ({e.response.status_code}): {url}") from e
+    except httpx.RequestError as e:
+        raise OPDSFetchError(f"Request failed: {url}") from e
+
     return response.text
 
-# knossos/opds/client.py (addition)
 
 from pathlib import Path
 
