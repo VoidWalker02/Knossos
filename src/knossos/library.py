@@ -43,6 +43,7 @@ def scan_directory(directory: Path) -> list[LibraryEntry]:
         )
     return entries
 
+
 def scan_libraries(directories: list[Path]) -> list[LibraryEntry]:
     seen_paths: set[Path] = set()
     entries: list[LibraryEntry] = []
@@ -57,8 +58,8 @@ def scan_libraries(directories: list[Path]) -> list[LibraryEntry]:
             seen_paths.add(resolved)
             entries.append(entry)
 
-    _annotate_duplicates(entries)
-    return sorted(entries, key=lambda e: e.title)
+    deduplicated = _collapse_identifier_duplicates(entries)
+    return sorted(deduplicated, key=lambda e: e.title)
 
 
 def _annotate_duplicates(entries: list[LibraryEntry]) -> None:
@@ -78,3 +79,32 @@ def _annotate_duplicates(entries: list[LibraryEntry]) -> None:
             for entry in group:
                 entry.duplicate_paths = [e.path for e in group if e.path != entry.path]    
 
+
+def _collapse_identifier_duplicates(entries: list[LibraryEntry]) -> list[LibraryEntry]:
+    """
+    Group entries by EPUB identifier and collapse each group down to a
+    single representative entry, recording the other copies' paths on it.
+    Entries with no identifier are never collapsed, since we have no
+    reliable way to know they're actually the same book.
+    """
+    by_identifier: dict[str, list[LibraryEntry]] = {}
+    no_identifier: list[LibraryEntry] = []
+
+    for entry in entries:
+        if entry.identifier:
+            by_identifier.setdefault(entry.identifier, []).append(entry)
+        else:
+            no_identifier.append(entry)
+
+    collapsed: list[LibraryEntry] = list(no_identifier)
+
+    for group in by_identifier.values():
+        # Prefer the entry whose path is shortest as the "primary" copy —
+        # arbitrary but consistent, and slightly favors a tidier location
+        # (e.g. a properly organized folder) over a longer, messier one
+        # (e.g. a raw download filename) when there's no better signal to go on.
+        primary = min(group, key=lambda e: len(str(e.path)))
+        primary.duplicate_paths = [e.path for e in group if e.path != primary.path]
+        collapsed.append(primary)
+
+    return collapsed
