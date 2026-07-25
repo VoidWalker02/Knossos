@@ -48,7 +48,8 @@ from knossos.epub.search import search_book, SearchResult
 
 from knossos.themes import ALL_THEMES
 
-from knossos.epub.book import apply_paragraph_spacing  # add to existing book import line
+from knossos.epub.book import apply_paragraph_spacing  
+from knossos.epub.book import normalize_excerpt
 
 
 DEFAULT_MAX_WIDTH = 80
@@ -115,8 +116,6 @@ class ReaderScreen(Screen):
         with Vertical(id="search-panel"):
             yield Input(placeholder="Search this book...", id="search-input")
             yield ListView(id="search-results")
-
-        yield ListView(id="highlight-picker")
         with Vertical(id="highlight-note-bar"):
             yield Input(placeholder="Optional note (Enter to save, empty is fine)...", id="highlight-note-input")
         yield ListView(id="annotations-panel")
@@ -125,7 +124,6 @@ class ReaderScreen(Screen):
         with Vertical(id="dictionary-panel"):
             yield Static("", id="dictionary-content")
         yield Footer()
-
 
     def on_mount(self) -> None:
         book = load_book(self.book_path)
@@ -144,17 +142,13 @@ class ReaderScreen(Screen):
             author=meta.author,
             identifier=meta.identifier,
         )
+
         saved = load_progress(self.db_conn, self.book_id)
         if saved is not None:
             self.current_index, initial_scroll = saved
             self.scroll_positions[self.current_index] = initial_scroll
         else:
             self.current_index = 0
-
-        # An explicit starting chapter (e.g. from a library-wide search result)
-        # takes priority over whatever saved progress says.
-        if self.initial_chapter_index is not None:
-            self.current_index = self.initial_chapter_index    
 
         app_config = self.app.config
         self.max_width = app_config.max_width or DEFAULT_MAX_WIDTH
@@ -169,15 +163,15 @@ class ReaderScreen(Screen):
         self.query_one("#toc-panel", ListView).display = False
         self.query_one("#bookmarks-panel", ListView).display = False
         self.query_one("#search-panel", Vertical).display = False
-
-        self.query_one("#highlight-picker", ListView).display = False
         self.query_one("#highlight-note-bar", Vertical).display = False
         self.query_one("#annotations-panel", ListView).display = False
-        self._pending_highlight_text: str | None = None
         self.query_one("#dictionary-bar", Vertical).display = False
         self.query_one("#dictionary-panel", Vertical).display = False
+        self._pending_highlight_text: str | None = None
+        self._pending_highlight_paragraph_index: int | None = None
 
         self.render_current_chapter()
+
 
     def build_toc_panel(self) -> None:
         toc_panel = self.query_one("#toc-panel", ListView)
@@ -302,21 +296,41 @@ class ReaderScreen(Screen):
         self.query_one("#search-input", Input).focus()
 
     def action_start_highlight(self) -> None:
+        selected_text = self.get_selected_text()
+
+        if not selected_text or not selected_text.strip():
+            self.notify(
+                "No text selected. Click and drag to select a passage first, then press h.",
+                severity="warning",
+            )
+            return
+
+        excerpt = normalize_excerpt(selected_text)
+        self._pending_highlight_text = excerpt
+        self._pending_highlight_paragraph_index = self._find_paragraph_index_for_excerpt(excerpt)
+
+        reader_pane = self.query_one("#reader-pane", VerticalScroll)
+        note_bar = self.query_one("#highlight-note-bar", Vertical)
+        reader_pane.display = False
+        note_bar.display = True
+        self.query_one("#highlight-note-input", Input).focus()
+
+
+    def _find_paragraph_index_for_excerpt(self, excerpt: str) -> int | None:
+        """
+        Best-effort: find which paragraph of the current chapter overlaps the
+        captured excerpt, for scroll-position estimation. excerpt is already
+        normalized (single-spaced) by the caller.
+        """
         chapter = self.chapters[self.current_index]
         paragraphs = [p.strip() for p in chapter_to_text(chapter).split("\n\n") if p.strip()]
 
-        picker = self.query_one("#highlight-picker", ListView)
-        picker.clear()
         for index, para in enumerate(paragraphs):
-            preview = para[:100] + ("…" if len(para) > 100 else "")
-            item = ListItem(Label(preview))
-            item.full_text = para
-            item.paragraph_index = index  # position within this chapter's paragraphs
-            picker.append(item)
+            normalized_para = normalize_excerpt(para)
+            if normalized_para in excerpt or excerpt in normalized_para:
+                return index
 
-        self.query_one("#reader-pane", VerticalScroll).display = False
-        picker.display = True
-        picker.focus()    
+        return None    
 
 
     def _chapter_title_for(self, chapter_index: int) -> str:
@@ -367,6 +381,7 @@ class ReaderScreen(Screen):
                 delete_annotation(self.db_conn, highlighted.annotation_id)
                 self.notify("Annotation deleted")
                 self._refresh_annotations_panel()
+                self.render_current_chapter()
             return
 
         
@@ -382,7 +397,6 @@ class ReaderScreen(Screen):
         search_panel = self.query_one("#search-panel", Vertical)
         toc_panel = self.query_one("#toc-panel", ListView)
         bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
-        highlight_picker = self.query_one("#highlight-picker", ListView)
         highlight_note_bar = self.query_one("#highlight-note-bar", Vertical)
         annotations_panel = self.query_one("#annotations-panel", ListView)
         dictionary_bar = self.query_one("#dictionary-bar", Vertical)
@@ -397,14 +411,11 @@ class ReaderScreen(Screen):
         if bookmarks_panel.display:
             self.action_toggle_bookmarks()
             return
-        if highlight_picker.display:
-            highlight_picker.display = False
-            self.query_one("#reader-pane", VerticalScroll).display = True
-            return
         if highlight_note_bar.display:
             highlight_note_bar.display = False
             self.query_one("#reader-pane", VerticalScroll).display = True
             self._pending_highlight_text = None
+            self._pending_highlight_paragraph_index = None
             return
         if annotations_panel.display:
             self.action_toggle_annotations()
@@ -415,11 +426,10 @@ class ReaderScreen(Screen):
             return
         if dictionary_panel.display:
             self.action_close_dictionary()
-            return    
-            
+            return
 
         self._persist_progress()
-        self.app.pop_screen()    
+        self.app.pop_screen()   
     
 
 
@@ -428,14 +438,12 @@ class ReaderScreen(Screen):
         self.app.exit()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-
-
         if event.input.id == "dictionary-input":
             word = event.value.strip()
             if word:
                 await self._handle_dictionary_submit(word)
             return
-        # Annotation note being saved
+
         if event.input.id == "highlight-note-input":
             note = event.value.strip() or None
             add_annotation(
@@ -444,13 +452,16 @@ class ReaderScreen(Screen):
                 chapter_index=self.current_index,
                 excerpt=self._pending_highlight_text,
                 note=note,
+                paragraph_index=self._pending_highlight_paragraph_index,
             )
             self.notify("Annotation saved.")
             self._pending_highlight_text = None
+            self._pending_highlight_paragraph_index = None
             self.query_one("#highlight-note-bar", Vertical).display = False
             self.query_one("#reader-pane", VerticalScroll).display = True
+            self.render_current_chapter()
             return
-        # Book search query being submitted
+
         query = event.value
         chapter_titles = {entry.chapter_position: entry.title for entry in self.toc}
         results = search_book(self.chapters, query, chapter_titles=chapter_titles)
@@ -463,26 +474,15 @@ class ReaderScreen(Screen):
             item.chapter_index = result.chapter_index
             results_list.append(item)
 
-        results_list.focus()
-    
+        results_list.focus()   
+
+
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         toc_panel = self.query_one("#toc-panel", ListView)
         bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
         search_results = self.query_one("#search-results", ListView)
-        highlight_picker = self.query_one("#highlight-picker", ListView)
         annotations_panel = self.query_one("#annotations-panel", ListView)
 
-        # Highlight picker: a paragraph was chosen, prompt for a note. Handled
-        # separately (return early) since it opens the note input rather than
-        # jumping chapters like the other panels.
-        if event.list_view is highlight_picker:
-            self._pending_highlight_text = event.item.full_text
-            self._pending_highlight_paragraph_index = event.item.paragraph_index
-            highlight_picker.display = False
-            note_bar = self.query_one("#highlight-note-bar", Vertical)
-            note_bar.display = True
-            self.query_one("#highlight-note-input", Input).focus()
-            return
         self._save_scroll_position()
 
         if event.list_view is toc_panel:
@@ -495,7 +495,6 @@ class ReaderScreen(Screen):
         elif event.list_view is search_results:
             self.current_index = event.item.chapter_index
             self._close_search()
-
         elif event.list_view is annotations_panel:
             self.current_index = event.item.chapter_index
             if event.item.paragraph_index is not None:
@@ -504,7 +503,7 @@ class ReaderScreen(Screen):
                 )
             self.action_toggle_annotations()
 
-        self.render_current_chapter() 
+        self.render_current_chapter()
 
     def action_toggle_annotations(self) -> None:
         panel = self.query_one("#annotations-panel", ListView)

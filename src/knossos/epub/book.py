@@ -208,33 +208,80 @@ def apply_paragraph_spacing(text: str, spacing: int) -> str:
 
 def apply_highlights(markup_text: str, plain_text: str, excerpts: list[str]) -> str:
     """
-    Wrap any paragraph in markup_text whose corresponding plain-text
-    paragraph matches a stored annotation excerpt, using Rich's built-in
-    'reverse' style (safe, theme-independent — doesn't depend on any
-    particular color being defined).
+    Highlight annotated passages within already-converted chapter markup.
 
-    Relies on markup_text and plain_text having the same paragraph
-    structure (true for chapter_to_markup/chapter_to_text on the same
-    chapter, since both derive from the same html2text conversion).
+    For each paragraph, tries to find the *exact* span of a stored excerpt
+    within that paragraph's original text (whitespace-tolerant, case-
+    insensitive) and wraps just that span in [reverse]...[/reverse],
+    rebuilding the paragraph's markup from scratch in the process, which
+    means any bold/italic emphasis within that one paragraph is not
+    preserved (a minor, deliberate tradeoff for genuine substring precision).
+
+    Falls back to highlighting the *whole* paragraph when an excerpt can't
+    be precisely located within it (e.g. a selection that spanned multiple
+    paragraphs), same behavior as before this change.
     """
     if not excerpts:
         return markup_text
 
-    normalized_excerpts = {e.strip() for e in excerpts}
+    normalized_excerpts = [normalize_excerpt(e) for e in excerpts]
 
     markup_paragraphs = markup_text.split("\n\n")
     plain_paragraphs = plain_text.split("\n\n")
 
     if len(markup_paragraphs) != len(plain_paragraphs):
-        # Structural mismatch (shouldn't normally happen) — bail out
-        # rather than risk wrapping the wrong paragraph.
         return markup_text
 
     for i, plain_para in enumerate(plain_paragraphs):
-        if plain_para.strip() in normalized_excerpts:
-            markup_paragraphs[i] = f"[reverse]{markup_paragraphs[i]}[/reverse]"
+        normalized_para = normalize_excerpt(plain_para)
+        if not normalized_para:
+            continue
 
-    return "\n\n".join(markup_paragraphs)    
+        for excerpt in normalized_excerpts:
+            precise = _highlight_precise_span(plain_para, excerpt)
+            if precise is not None:
+                markup_paragraphs[i] = precise
+                break
+            elif normalized_para in excerpt or excerpt in normalized_para:
+                # Fallback: couldn't pin down an exact span (likely a
+                # multi-paragraph selection) — highlight the whole paragraph.
+                markup_paragraphs[i] = f"[reverse]{markup_paragraphs[i]}[/reverse]"
+                break
+
+    return "\n\n".join(markup_paragraphs)
+
+
+
+def _highlight_precise_span(paragraph_text: str, normalized_excerpt: str) -> str | None:
+    """
+    Try to find normalized_excerpt as an exact (whitespace-tolerant) span
+    within paragraph_text, and return a freshly built markup string with
+    just that span wrapped in [reverse]...[/reverse]. Returns None if no
+    such span can be found.
+    """
+    # Build a regex from the excerpt where any run of whitespace becomes
+    # \s+, so differences in wrapping/newlines between capture time and
+    # this render don't prevent a match.
+    escaped_parts = [re.escape(word) for word in normalized_excerpt.split(" ")]
+    pattern = r"\s+".join(escaped_parts)
+
+    match = re.search(pattern, paragraph_text, re.IGNORECASE)
+    if match is None:
+        return None
+
+    before = paragraph_text[:match.start()]
+    matched = paragraph_text[match.start():match.end()]
+    after = paragraph_text[match.end():]
+
+    # Escape literal brackets in each piece, same convention chapter_to_markup
+    # uses, since we're bypassing its own escaping for this rebuilt paragraph.
+    before = before.replace("[", "\\[")
+    matched = matched.replace("[", "\\[")
+    after = after.replace("[", "\\[")
+
+    return f"{before}[reverse]{matched}[/reverse]{after}"
+
+    
 
 def get_cover_image_bytes(book: epub.EpubBook) -> bytes | None:
     """
@@ -258,4 +305,15 @@ def get_cover_image_bytes(book: epub.EpubBook) -> bytes | None:
     for item in book.get_items_of_type(ebooklib.ITEM_COVER):
         return item.get_content()
 
-    return None   
+    return None
+
+
+def normalize_excerpt(text: str) -> str:
+    """
+    Collapse all whitespace (including the hard line-breaks introduced by
+    on-screen wrapping, or multi-paragraph selections) into single spaces.
+    Used both when storing a newly captured excerpt and when matching
+    stored excerpts against freshly rendered chapter text, both sides
+    must go through this same normalization to compare reliably.
+    """
+    return re.sub(r"\s+", " ", text).strip()    
