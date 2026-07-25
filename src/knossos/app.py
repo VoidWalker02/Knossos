@@ -12,6 +12,7 @@ from textual.screen import Screen
 
 from knossos.config import get_paths
 from knossos.db import connect, get_or_create_book, save_progress, load_progress, add_annotation, list_annotations, delete_annotation
+from knossos.dictionary import lookup_word
 
 from knossos.epub.book import (
     load_book,
@@ -72,6 +73,8 @@ class ReaderScreen(Screen):
         ("-", "narrow_text", "Narrow text"),
         ("h", "start_highlight", "Highlight paragraph"),
         ("H", "toggle_annotations", "View annotations"),
+        ("z", "start_dictionary_lookup", "Look up word"),
+
         ("escape", "back_to_library", "Library"),
     ]
 
@@ -100,8 +103,13 @@ class ReaderScreen(Screen):
         yield ListView(id="highlight-picker")
         with Vertical(id="highlight-note-bar"):
             yield Input(placeholder="Optional note (Enter to save, empty is fine)...", id="highlight-note-input")
-        yield ListView(id="annotations-panel")    
+        yield ListView(id="annotations-panel")
+        with Vertical(id="dictionary-bar"):
+            yield Input(placeholder="Word to look up...", id="dictionary-input")
+        with Vertical(id="dictionary-panel"):
+            yield Static("", id="dictionary-content")
         yield Footer()
+
 
     def on_mount(self) -> None:
         book = load_book(self.book_path)
@@ -140,6 +148,8 @@ class ReaderScreen(Screen):
         self.query_one("#highlight-note-bar", Vertical).display = False
         self.query_one("#annotations-panel", ListView).display = False
         self._pending_highlight_text: str | None = None
+        self.query_one("#dictionary-bar", Vertical).display = False
+        self.query_one("#dictionary-panel", Vertical).display = False
 
         self.render_current_chapter()
 
@@ -314,6 +324,8 @@ class ReaderScreen(Screen):
         highlight_picker = self.query_one("#highlight-picker", ListView)
         highlight_note_bar = self.query_one("#highlight-note-bar", Vertical)
         annotations_panel = self.query_one("#annotations-panel", ListView)
+        dictionary_bar = self.query_one("#dictionary-bar", Vertical)
+        dictionary_panel = self.query_one("#dictionary-panel", Vertical)
 
         if search_panel.display:
             self._close_search()
@@ -336,6 +348,14 @@ class ReaderScreen(Screen):
         if annotations_panel.display:
             self.action_toggle_annotations()
             return
+        if dictionary_bar.display:
+            dictionary_bar.display = False
+            self.query_one("#reader-pane", VerticalScroll).display = True
+            return
+        if dictionary_panel.display:
+            self.action_close_dictionary()
+            return    
+            
 
         self._persist_progress()
         self.app.pop_screen()    
@@ -346,7 +366,14 @@ class ReaderScreen(Screen):
         self._persist_progress()
         self.app.exit()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+
+
+        if event.input.id == "dictionary-input":
+            word = event.value.strip()
+            if word:
+                await self._handle_dictionary_submit(word)
+            return
         # Annotation note being saved
         if event.input.id == "highlight-note-input":
             note = event.value.strip() or None
@@ -440,7 +467,49 @@ class ReaderScreen(Screen):
 
     def _close_search(self) -> None:
         self.query_one("#search-panel", Vertical).display = False
-        self.query_one("#reader-pane", VerticalScroll).display = True 
+        self.query_one("#reader-pane", VerticalScroll).display = True
+
+    def action_start_dictionary_lookup(self) -> None:
+        reader_pane = self.query_one("#reader-pane", VerticalScroll)
+        dictionary_bar = self.query_one("#dictionary-bar", Vertical)
+
+        reader_pane.display = False
+        dictionary_bar.display = True
+        self.query_one("#dictionary-input", Input).focus()
+
+
+    async def _handle_dictionary_submit(self, word: str) -> None:
+        self.query_one("#dictionary-bar", Vertical).display = False
+
+        panel = self.query_one("#dictionary-panel", Vertical)
+        content = self.query_one("#dictionary-content", Static)
+        content.update(f"Looking up '{word}'...")
+        panel.display = True
+
+        result = await lookup_word(word)
+
+        if result is None:
+            content.update(f"No definition found for '{word}'.")
+            return
+
+        lines = [f"[bold]{result.word}[/bold]"]
+        if result.phonetic:
+            lines.append(f"[dim]{result.phonetic}[/dim]")
+        lines.append("")
+
+        for d in result.definitions[:5]:  # cap displayed senses to keep the panel readable
+            lines.append(f"[italic]{d.part_of_speech}[/italic]  {d.definition}")
+            if d.example:
+                lines.append(f"  [dim]e.g. \"{d.example}\"[/dim]")
+            lines.append("")
+
+        content.update("\n".join(lines))
+
+    def action_close_dictionary(self) -> None:
+        panel = self.query_one("#dictionary-panel", Vertical)
+        if panel.display:
+            panel.display = False
+            self.query_one("#reader-pane", VerticalScroll).display = True    
 
 # knossos/app.py (changes to KnossosApp)
 
