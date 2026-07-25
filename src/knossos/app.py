@@ -142,8 +142,8 @@ class ReaderScreen(Screen):
             path=str(self.book_path.resolve()),
             title=meta.title,
             author=meta.author,
+            identifier=meta.identifier,
         )
-
         saved = load_progress(self.db_conn, self.book_id)
         if saved is not None:
             self.current_index, initial_scroll = saved

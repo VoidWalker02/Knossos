@@ -15,6 +15,7 @@ class LibraryEntry:
     title: str
     author: str | None
     source_dir: Path
+    identifier: str | None = None
 
 def scan_directory(directory: Path) -> list[LibraryEntry]:
     """
@@ -33,8 +34,12 @@ def scan_directory(directory: Path) -> list[LibraryEntry]:
             # whole library scan. Please do remember to change this later!!!!
             continue
 
-        entries.append(LibraryEntry(path=path, title=meta.title, author=meta.author, source_dir=directory))
-
+        entries.append(
+            LibraryEntry(
+                path=path, title=meta.title, author=meta.author,
+                source_dir=directory, identifier=meta.identifier,
+            )
+        )
     return entries
 
 def scan_libraries(directories: list[Path]) -> list[LibraryEntry]:

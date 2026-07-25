@@ -15,7 +15,7 @@ from textual.widgets import Header, Footer, ListView, ListItem, Label, DataTable
 
 from knossos.library import scan_libraries, LibraryEntry
 from knossos.config import get_paths
-from knossos.db import connect, get_book_id_by_path, load_progress
+from knossos.db import connect, get_book_id_by_identity, load_progress
 from knossos.db import get_most_recent_book
 from knossos.ui.screens.library_search import LibrarySearchScreen
 
@@ -225,7 +225,7 @@ class LibraryScreen(Screen):
     
 
     def _show_details(self, entry: LibraryEntry) -> None:
-        book_id = get_book_id_by_path(self.db_conn, str(entry.path.resolve()))
+        book_id = book_id = get_book_id_by_identity(self.db_conn, entry.identifier, str(entry.path.resolve()))
         progress_line = "Not started yet."
         if book_id is not None:
             progress = load_progress(self.db_conn, book_id)

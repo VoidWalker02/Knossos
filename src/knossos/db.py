@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS progress (
     PRIMARY KEY (book_id)
 );
 
+
+
 CREATE TABLE IF NOT EXISTS annotations (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     book_id         INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -67,8 +69,23 @@ def connect(db_path: Path) -> sqlite3.Connection:
     if "paragraph_index" not in existing_annotation_columns:
         conn.execute("ALTER TABLE annotations ADD COLUMN paragraph_index INTEGER")
 
+    existing_book_columns = {row["name"] for row in conn.execute("PRAGMA table_info(books)")}
+    if "identifier" not in existing_book_columns:
+        conn.execute("ALTER TABLE books ADD COLUMN identifier TEXT")
+
+    # Only safe to create this index once the identifier column definitely
+    # exists — hence doing it here, after the migration above, rather than
+    # as part of the static SCHEMA script.
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_books_identifier
+        ON books(identifier) WHERE identifier IS NOT NULL
+        """
+    )
+
     conn.commit()
     return conn
+
 
 @contextmanager
 def session(db_path: Path) -> Iterator[sqlite3.Connection]:
@@ -84,20 +101,51 @@ def session(db_path: Path) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def get_or_create_book(conn: sqlite3.Connection, path: str, title: str, author: str | None) -> int:
-    """Look up a book by its file path, inserting it if it's not yet known.
-    Returns the book's id."""
-    row = conn.execute("SELECT id FROM books WHERE path = ?", (path,)).fetchone()
+# knossos/db.py (replace get_or_create_book)
+
+def get_or_create_book(
+    conn: sqlite3.Connection,
+    path: str,
+    title: str,
+    author: str | None,
+    identifier: str | None = None,
+) -> int:
+    """
+    Resolve a book to its db row, preferring its stable EPUB identifier
+    (dc:identifier) over file path. This means a book keeps its bookmarks/
+    progress/annotations even if it's moved, renamed, or opened from a
+    different path on another machine — as long as its identifier matches.
+
+    Falls back to path-based identity for EPUBs that don't have one.
+    """
+    if identifier:
+        row = conn.execute("SELECT id FROM books WHERE identifier = ?", (identifier,)).fetchone()
+        if row is not None:
+            book_id = row["id"]
+            # Path may have changed since we last saw this book — keep it current.
+            conn.execute(
+                "UPDATE books SET path = ?, title = ?, author = ? WHERE id = ?",
+                (path, title, author, book_id),
+            )
+            conn.commit()
+            return book_id
+
+    row = conn.execute("SELECT id, identifier FROM books WHERE path = ?", (path,)).fetchone()
     if row is not None:
-        return row["id"]
+        book_id = row["id"]
+        if identifier and not row["identifier"]:
+            # This path was registered before we tracked identifiers —
+            # upgrade it now that we have one.
+            conn.execute("UPDATE books SET identifier = ? WHERE id = ?", (identifier, book_id))
+            conn.commit()
+        return book_id
 
     cursor = conn.execute(
-        "INSERT INTO books (path, title, author) VALUES (?, ?, ?)",
-        (path, title, author),
+        "INSERT INTO books (path, identifier, title, author) VALUES (?, ?, ?, ?)",
+        (path, identifier, title, author),
     )
     conn.commit()
     return cursor.lastrowid
-
 
 def save_progress(conn: sqlite3.Connection, book_id: int, chapter_index: int, scroll_y: float) -> None:
     """Save reading progress for a book."""
@@ -221,9 +269,14 @@ def get_most_recent_book(conn: sqlite3.Connection) -> sqlite3.Row | None:
 
 
 
-def get_book_id_by_path(conn: sqlite3.Connection, path: str) -> int | None:
-    """Look up a book's id by path, without creating one if it doesn't exist.
-    Used for read-only lookups (e.g. showing progress in a preview pane)
-    where we don't want browsing to silently register books in the db."""
+
+def get_book_id_by_identity(conn: sqlite3.Connection, identifier: str | None, path: str) -> int | None:
+    """Read-only lookup, preferring identifier over path — used where we
+    don't want browsing to register a new book (e.g. a preview panel)."""
+    if identifier:
+        row = conn.execute("SELECT id FROM books WHERE identifier = ?", (identifier,)).fetchone()
+        if row is not None:
+            return row["id"]
+
     row = conn.execute("SELECT id FROM books WHERE path = ?", (path,)).fetchone()
     return row["id"] if row else None
