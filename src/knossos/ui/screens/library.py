@@ -13,6 +13,10 @@ from textual.widgets import Header, Footer, ListView, ListItem, Label, DataTable
 from knossos.library import scan_libraries, LibraryEntry
 from knossos.config import get_paths
 from knossos.db import connect, get_book_id_by_path, load_progress
+from knossos.db import get_most_recent_book
+from knossos.ui.screens.library_search import LibrarySearchScreen
+
+
 
 SORT_MODES = ["title", "author", "source"]
 
@@ -43,6 +47,9 @@ class LibraryScreen(Screen):
         ("s", "cycle_sort", "Sort"),
         ("/", "start_filter", "Filter"),
         ("escape", "close_filter", "Close filter"),
+        ("f", "full_search", "Search library"),
+        ("c", "continue_reading", "Continue reading"),
+
     ]
    
 
@@ -149,7 +156,24 @@ class LibraryScreen(Screen):
             self.query_one("#filter-input", Input).value = ""
             filter_bar.display = False
             self.refresh_table()
-            self.query_one("#library-table", DataTable).focus()      
+            self.query_one("#library-table", DataTable).focus()
+
+    def action_continue_reading(self) -> None:
+        row = get_most_recent_book(self.db_conn)
+        if row is None:
+            self.notify("No reading progress yet — open a book first.")
+            return
+
+        book_path = Path(row["path"])
+        if not book_path.exists():
+            self.notify(f"'{row['title']}' was moved or deleted.")
+            return
+
+        self.app.open_book(book_path)
+
+
+    def action_full_search(self) -> None:
+        self.app.push_screen(LibrarySearchScreen(self.all_entries))    
 
     
     def on_input_changed(self, event: Input.Changed) -> None:

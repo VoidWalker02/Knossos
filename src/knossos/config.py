@@ -61,6 +61,7 @@ class Config:
     opds_root_url: str | None = None
     theme: str | None = None
     max_width: int | None = None
+    paragraph_spacing: int | None = None
 
 
 def load_config(paths: Paths) -> Config:
@@ -89,6 +90,8 @@ def load_config(paths: Paths) -> Config:
         opds_servers=opds_servers,
         theme=data.get("theme"),
         max_width=data.get("max_width"),
+        paragraph_spacing=data.get("paragraph_spacing"),
+
     )
 
 def save_config(paths: Paths, config: Config) -> None:
@@ -100,6 +103,7 @@ def save_config(paths: Paths, config: Config) -> None:
         ],
         "theme": config.theme,
         "max_width": config.max_width,
+        "paragraph_spacing": config.paragraph_spacing,
     }
     data = {k: v for k, v in data.items() if v is not None and v != []}
 

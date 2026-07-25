@@ -184,6 +184,23 @@ def get_toc(book: epub.EpubBook, chapters: list[Chapter]) -> list[TocEntry]:
 
     return entries
 
+
+# knossos/epub/book.py (addition)
+
+def apply_paragraph_spacing(text: str, spacing: int) -> str:
+    """
+    Adjust the number of blank lines between paragraphs in already-converted
+    chapter text. `spacing` is the number of blank lines desired between
+    paragraphs (0 = paragraphs run together with a single newline, 1 = the
+    default single blank line, 2+ = extra breathing room).
+
+    Assumes paragraphs are currently separated by exactly "\n\n" (html2text's
+    default), which is what chapter_to_text/chapter_to_markup both produce.
+    """
+    separator = "\n" * (spacing + 1)
+    paragraphs = text.split("\n\n")
+    return separator.join(paragraphs)    
+
 def get_cover_image_bytes(book: epub.EpubBook) -> bytes | None:
     """
     Extract the cover image's raw bytes from an EPUB, if it has one.

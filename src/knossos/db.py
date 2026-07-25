@@ -188,7 +188,27 @@ def list_annotations(conn: sqlite3.Connection, book_id: int) -> list[sqlite3.Row
 
 def delete_annotation(conn: sqlite3.Connection, annotation_id: int) -> None:
     conn.execute("DELETE FROM annotations WHERE id = ?", (annotation_id,))
-    conn.commit() 
+    conn.commit()
+
+
+
+
+def get_most_recent_book(conn: sqlite3.Connection) -> sqlite3.Row | None:
+    """
+    Return the book with the most recently updated reading progress
+    (path, title, author, chapter_index, scroll_y), or None if no book
+    has any recorded progress yet.
+    """
+    return conn.execute(
+        """
+        SELECT books.path, books.title, books.author,
+               progress.chapter_index, progress.scroll_y, progress.updated_at
+        FROM progress
+        JOIN books ON books.id = progress.book_id
+        ORDER BY progress.updated_at DESC
+        LIMIT 1
+        """
+    ).fetchone()    
 
 
 

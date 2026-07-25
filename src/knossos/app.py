@@ -45,10 +45,18 @@ from knossos.epub.search import search_book, SearchResult
 
 from knossos.themes import ALL_THEMES
 
+from knossos.epub.book import apply_paragraph_spacing  # add to existing book import line
+
+
 DEFAULT_MAX_WIDTH = 80
 MIN_MAX_WIDTH = 40
 MAX_MAX_WIDTH = 200
 WIDTH_STEP = 5
+DEFAULT_PARAGRAPH_SPACING = 1
+MIN_PARAGRAPH_SPACING = 0
+MAX_PARAGRAPH_SPACING = 4
+
+
 
 class ReaderScreen(Screen):
     """The actual reading view. Paging, TOC, scroll memory, progress persistence."""
@@ -73,21 +81,26 @@ class ReaderScreen(Screen):
         ("-", "narrow_text", "Narrow text"),
         ("h", "start_highlight", "Highlight paragraph"),
         ("H", "toggle_annotations", "View annotations"),
+        ("[", "decrease_spacing", "Less spacing"),
+        ("]", "increase_spacing", "More spacing"),
         ("z", "start_dictionary_lookup", "Look up word"),
 
         ("escape", "back_to_library", "Library"),
     ]
 
-    def __init__(self, book_path: Path) -> None:
+    def __init__(self, book_path: Path, initial_chapter_index: int | None = None) -> None:
         super().__init__()
         self.book_path = book_path
+        self.initial_chapter_index = initial_chapter_index
         self.chapters = []
         self.toc = []
         self.current_index = 0
         self.scroll_positions: dict[int, float] = {}
         self.db_conn = None
         self.book_id: int | None = None
-        self.max_width = DEFAULT_MAX_WIDTH  # actual value set in on_mount from config
+        self.max_width = DEFAULT_MAX_WIDTH
+        self.paragraph_spacing = DEFAULT_PARAGRAPH_SPACING
+
 
 
     def compose(self) -> ComposeResult:
@@ -135,8 +148,18 @@ class ReaderScreen(Screen):
         else:
             self.current_index = 0
 
+        # An explicit starting chapter (e.g. from a library-wide search result)
+        # takes priority over whatever saved progress says.
+        if self.initial_chapter_index is not None:
+            self.current_index = self.initial_chapter_index    
+
         app_config = self.app.config
         self.max_width = app_config.max_width or DEFAULT_MAX_WIDTH
+        self.paragraph_spacing = (
+            app_config.paragraph_spacing
+            if app_config.paragraph_spacing is not None
+            else DEFAULT_PARAGRAPH_SPACING
+        )
         self._apply_reader_width()
 
         self.build_toc_panel()
@@ -164,6 +187,7 @@ class ReaderScreen(Screen):
     def render_current_chapter(self) -> None:
         chapter = self.chapters[self.current_index]
         text = chapter_to_markup(chapter)
+        text = apply_paragraph_spacing(text, self.paragraph_spacing)
         self.query_one("#reader-content", Static).update(text)
         self.sub_title = f"Chapter {self.current_index + 1} / {len(self.chapters)}"
 
@@ -509,7 +533,22 @@ class ReaderScreen(Screen):
         panel = self.query_one("#dictionary-panel", Vertical)
         if panel.display:
             panel.display = False
-            self.query_one("#reader-pane", VerticalScroll).display = True    
+            self.query_one("#reader-pane", VerticalScroll).display = True
+
+    def action_increase_spacing(self) -> None:
+        self.paragraph_spacing = min(self.paragraph_spacing + 1, MAX_PARAGRAPH_SPACING)
+        self._save_paragraph_spacing()
+        self.render_current_chapter()
+
+    def action_decrease_spacing(self) -> None:
+        self.paragraph_spacing = max(self.paragraph_spacing - 1, MIN_PARAGRAPH_SPACING)
+        self._save_paragraph_spacing()
+        self.render_current_chapter()
+
+    def _save_paragraph_spacing(self) -> None:
+        self.app.config.paragraph_spacing = self.paragraph_spacing
+        save_config(self.app.paths, self.app.config)
+        self.notify(f"Paragraph spacing: {self.paragraph_spacing}")        
 
 # knossos/app.py (changes to KnossosApp)
 
@@ -562,8 +601,9 @@ class KnossosApp(App):
      
      
     
-    def open_book(self, book_path: Path) -> None:
-        self.push_screen(ReaderScreen(book_path))
+    def open_book(self, book_path: Path, initial_chapter_index: int | None = None) -> None:
+        self.push_screen(ReaderScreen(book_path, initial_chapter_index=initial_chapter_index))
+
 
     def open_opds_browser(self) -> None:
         if not self.config.opds_servers:
