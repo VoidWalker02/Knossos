@@ -52,15 +52,23 @@ will break so long as books are moved. We'll need to change this before implemen
 OPDS functionality, luckily epubs have their own identifier and I'll switch to that
 when I am not lazy."""
 
+
 def connect(db_path: Path) -> sqlite3.Connection:
-    """Open a connection with sane defaults and ensure schema exists."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+
+    existing_progress_columns = {row["name"] for row in conn.execute("PRAGMA table_info(progress)")}
+    if "finished_at" not in existing_progress_columns:
+        conn.execute("ALTER TABLE progress ADD COLUMN finished_at TEXT")
+
+    existing_annotation_columns = {row["name"] for row in conn.execute("PRAGMA table_info(annotations)")}
+    if "paragraph_index" not in existing_annotation_columns:
+        conn.execute("ALTER TABLE annotations ADD COLUMN paragraph_index INTEGER")
+
     conn.commit()
     return conn
-
 
 @contextmanager
 def session(db_path: Path) -> Iterator[sqlite3.Connection]:
@@ -162,13 +170,14 @@ def add_annotation(
     chapter_index: int,
     excerpt: str,
     note: str | None = None,
+    paragraph_index: int | None = None,
 ) -> int:
     cursor = conn.execute(
         """
-        INSERT INTO annotations (book_id, chapter_index, excerpt, note)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO annotations (book_id, chapter_index, excerpt, note, paragraph_index)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (book_id, chapter_index, excerpt, note),
+        (book_id, chapter_index, excerpt, note, paragraph_index),
     )
     conn.commit()
     return cursor.lastrowid
@@ -177,7 +186,7 @@ def add_annotation(
 def list_annotations(conn: sqlite3.Connection, book_id: int) -> list[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT id, chapter_index, excerpt, note, created_at
+        SELECT id, chapter_index, excerpt, note, paragraph_index, created_at
         FROM annotations
         WHERE book_id = ?
         ORDER BY created_at DESC

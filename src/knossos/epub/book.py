@@ -199,7 +199,42 @@ def apply_paragraph_spacing(text: str, spacing: int) -> str:
     """
     separator = "\n" * (spacing + 1)
     paragraphs = text.split("\n\n")
-    return separator.join(paragraphs)    
+    return separator.join(paragraphs)
+
+
+
+
+
+
+def apply_highlights(markup_text: str, plain_text: str, excerpts: list[str]) -> str:
+    """
+    Wrap any paragraph in markup_text whose corresponding plain-text
+    paragraph matches a stored annotation excerpt, using Rich's built-in
+    'reverse' style (safe, theme-independent — doesn't depend on any
+    particular color being defined).
+
+    Relies on markup_text and plain_text having the same paragraph
+    structure (true for chapter_to_markup/chapter_to_text on the same
+    chapter, since both derive from the same html2text conversion).
+    """
+    if not excerpts:
+        return markup_text
+
+    normalized_excerpts = {e.strip() for e in excerpts}
+
+    markup_paragraphs = markup_text.split("\n\n")
+    plain_paragraphs = plain_text.split("\n\n")
+
+    if len(markup_paragraphs) != len(plain_paragraphs):
+        # Structural mismatch (shouldn't normally happen) — bail out
+        # rather than risk wrapping the wrong paragraph.
+        return markup_text
+
+    for i, plain_para in enumerate(plain_paragraphs):
+        if plain_para.strip() in normalized_excerpts:
+            markup_paragraphs[i] = f"[reverse]{markup_paragraphs[i]}[/reverse]"
+
+    return "\n\n".join(markup_paragraphs)    
 
 def get_cover_image_bytes(book: epub.EpubBook) -> bytes | None:
     """

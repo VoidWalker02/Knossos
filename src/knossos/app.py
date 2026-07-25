@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import textwrap
+
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Static, ListView, ListItem, Label
@@ -21,6 +23,7 @@ from knossos.epub.book import (
     get_toc,
     chapter_to_text,
     chapter_to_markup,
+    apply_highlights,
 )
 from knossos.db import (
     connect,
@@ -187,6 +190,17 @@ class ReaderScreen(Screen):
     def render_current_chapter(self) -> None:
         chapter = self.chapters[self.current_index]
         text = chapter_to_markup(chapter)
+        chapter_excerpts = [
+            row["excerpt"] for row in list_annotations(self.db_conn, self.book_id)
+            if row["chapter_index"] == self.current_index
+        ]
+        if chapter_excerpts:
+            plain = chapter_to_text(chapter)
+            text = apply_highlights(text, plain, chapter_excerpts)
+
+
+
+
         text = apply_paragraph_spacing(text, self.paragraph_spacing)
         self.query_one("#reader-content", Static).update(text)
         self.sub_title = f"Chapter {self.current_index + 1} / {len(self.chapters)}"
@@ -201,6 +215,28 @@ class ReaderScreen(Screen):
     def _save_scroll_position(self) -> None:
         reader_pane = self.query_one("#reader-pane", VerticalScroll)
         self.scroll_positions[self.current_index] = reader_pane.scroll_y
+
+
+
+    # knossos/app.py (new helper method on ReaderScreen)
+
+    def _estimate_scroll_for_paragraph(self, chapter_index: int, paragraph_index: int) -> float:
+        """
+        Rough estimate of the scroll_y a given paragraph starts at, based on
+        wrapping plain (unstyled) text at the current reading width. This is
+        an approximation — Rich's actual wrapping algorithm can differ
+        slightly (punctuation, unicode width, etc.) — but lands close enough
+        to be far better than always jumping to the top of the chapter.
+        """
+        chapter = self.chapters[chapter_index]
+        paragraphs = [p.strip() for p in chapter_to_text(chapter).split("\n\n") if p.strip()]
+
+        lines_before = 0
+        for para in paragraphs[:paragraph_index]:
+            wrapped = textwrap.wrap(para, width=self.max_width) or [""]
+            lines_before += len(wrapped) + self.paragraph_spacing
+
+        return float(lines_before)    
 
     def _persist_progress(self) -> None:
         if self.db_conn is not None and self.book_id is not None:
@@ -271,10 +307,11 @@ class ReaderScreen(Screen):
 
         picker = self.query_one("#highlight-picker", ListView)
         picker.clear()
-        for para in paragraphs:
+        for index, para in enumerate(paragraphs):
             preview = para[:100] + ("…" if len(para) > 100 else "")
             item = ListItem(Label(preview))
             item.full_text = para
+            item.paragraph_index = index  # position within this chapter's paragraphs
             picker.append(item)
 
         self.query_one("#reader-pane", VerticalScroll).display = False
@@ -413,7 +450,6 @@ class ReaderScreen(Screen):
             self.query_one("#highlight-note-bar", Vertical).display = False
             self.query_one("#reader-pane", VerticalScroll).display = True
             return
-
         # Book search query being submitted
         query = event.value
         chapter_titles = {entry.chapter_position: entry.title for entry in self.toc}
@@ -441,12 +477,12 @@ class ReaderScreen(Screen):
         # jumping chapters like the other panels.
         if event.list_view is highlight_picker:
             self._pending_highlight_text = event.item.full_text
+            self._pending_highlight_paragraph_index = event.item.paragraph_index
             highlight_picker.display = False
             note_bar = self.query_one("#highlight-note-bar", Vertical)
             note_bar.display = True
             self.query_one("#highlight-note-input", Input).focus()
             return
-
         self._save_scroll_position()
 
         if event.list_view is toc_panel:
@@ -459,8 +495,13 @@ class ReaderScreen(Screen):
         elif event.list_view is search_results:
             self.current_index = event.item.chapter_index
             self._close_search()
+
         elif event.list_view is annotations_panel:
             self.current_index = event.item.chapter_index
+            if event.item.paragraph_index is not None:
+                self.scroll_positions[self.current_index] = self._estimate_scroll_for_paragraph(
+                    event.item.chapter_index, event.item.paragraph_index
+                )
             self.action_toggle_annotations()
 
         self.render_current_chapter() 
@@ -476,6 +517,7 @@ class ReaderScreen(Screen):
         panel.display = not showing
         reader_pane.display = showing
 
+
     def _refresh_annotations_panel(self) -> None:
         panel = self.query_one("#annotations-panel", ListView)
         panel.clear()
@@ -487,6 +529,7 @@ class ReaderScreen(Screen):
             item = ListItem(Label(label_text))
             item.annotation_id = row["id"]
             item.chapter_index = row["chapter_index"]
+            item.paragraph_index = row["paragraph_index"]
             panel.append(item)    
 
     def _close_search(self) -> None:
