@@ -8,6 +8,8 @@ from pathlib import Path
 import textwrap
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
+
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Static, ListView, ListItem, Label
 from textual.screen import Screen
@@ -74,24 +76,23 @@ class ReaderScreen(Screen):
     """
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("n", "next_chapter", "Next chapter"),
-        ("p", "prev_chapter", "Prev chapter"),
-        ("t", "toggle_toc", "Table of contents"),
-        ("b", "add_bookmark", "Add bookmark"),
-        ("B", "toggle_bookmarks", "View bookmarks"),
-        ("d", "delete_bookmark", "Delete bookmark"),
-        ("slash", "start_search", "Search"),
-        ("+", "widen_text", "Widen text"),
-        ("-", "narrow_text", "Narrow text"),
-        ("h", "start_highlight", "Highlight paragraph"),
-        ("H", "toggle_annotations", "View annotations"),
-        ("r", "edit_annotation", "Edit note"),
-        ("[", "decrease_spacing", "Less spacing"),
-        ("]", "increase_spacing", "More spacing"),
-        ("z", "start_dictionary_lookup", "Look up word"),
-
-        ("escape", "back_to_library", "Library"),
+        Binding("q", "quit", "Quit", id="reader.quit"),
+        Binding("n", "next_chapter", "Next chapter", id="reader.next_chapter"),
+        Binding("p", "prev_chapter", "Prev chapter", id="reader.prev_chapter"),
+        Binding("t", "toggle_toc", "Table of contents", id="reader.toc"),
+        Binding("b", "add_bookmark", "Add bookmark", id="reader.add_bookmark"),
+        Binding("B", "toggle_bookmarks", "View bookmarks", id="reader.view_bookmarks"),
+        Binding("d", "delete_bookmark", "Delete bookmark", id="reader.delete"),
+        Binding("slash", "start_search", "Search", id="reader.search"),
+        Binding("+", "widen_text", "Widen text", id="reader.widen"),
+        Binding("-", "narrow_text", "Narrow text", id="reader.narrow"),
+        Binding("[", "decrease_spacing", "Less spacing", id="reader.spacing_down"),
+        Binding("]", "increase_spacing", "More spacing", id="reader.spacing_up"),
+        Binding("h", "start_highlight", "Highlight selection", id="reader.highlight"),
+        Binding("H", "toggle_annotations", "View annotations", id="reader.view_annotations"),
+        Binding("r", "edit_annotation", "Edit note", id="reader.edit_annotation"),
+        Binding("z", "start_dictionary_lookup", "Look up word", id="reader.dictionary"),
+        Binding("escape", "back_to_library", "Library", id="reader.back"),
     ]
 
     def __init__(self, book_path: Path, initial_chapter_index: int | None = None) -> None:
@@ -631,7 +632,7 @@ class ReaderScreen(Screen):
 class KnossosApp(App):
 
     BINDINGS = [
-        ("ctrl+t", "toggle_theme", "Toggle theme"),
+        Binding("ctrl+t", "toggle_theme", "Toggle theme", id="app.toggle_theme"),
     ]
 
     
@@ -653,8 +654,12 @@ class KnossosApp(App):
         else:
             self.theme = "textual-dark"
 
-        self._theme_restored = True  # from here on, any theme change should persist
-        self.push_screen(LibraryScreen(self.library_dirs)) 
+        self._theme_restored = True
+
+        if self.config.keybindings:
+            self.set_keymap(self.config.keybindings)
+
+        self.push_screen(LibraryScreen(self.library_dirs))
     
 
     

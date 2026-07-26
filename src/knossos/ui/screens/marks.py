@@ -6,6 +6,8 @@ from pathlib import Path
 
 from textual.screen import Screen
 from textual.app import ComposeResult
+from textual.binding import Binding
+
 from textual.widgets import Header, Footer, DataTable
 
 from knossos.db import list_all_bookmarks, list_all_annotations
@@ -21,8 +23,8 @@ class MarksScreen(Screen):
     """
 
     BINDINGS = [
-        ("escape", "go_back", "Back"),
-        ("q", "quit", "Quit"),
+        Binding("escape", "go_back", "Back", id="marks.back"),
+        Binding("q", "quit", "Quit", id="marks.quit"),
     ]
 
     def __init__(self, db_conn) -> None:

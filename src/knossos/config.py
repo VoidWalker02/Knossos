@@ -62,6 +62,7 @@ class Config:
     theme: str | None = None
     max_width: int | None = None
     paragraph_spacing: int | None = None
+    keybindings: dict[str, str] = field(default_factory=dict)
 
 
 def load_config(paths: Paths) -> Config:
@@ -75,9 +76,6 @@ def load_config(paths: Paths) -> Config:
         legacy_single_dir = data.get("library_dir")
         library_dirs = [legacy_single_dir] if legacy_single_dir else []
 
-    # Backward compatibility: migrate old singular opds_root_url into the
-    # new opds_servers list, giving it no nickname (falls back to showing
-    # the URL itself in any server picker).
     raw_servers = data.get("opds_servers")
     if raw_servers is not None:
         opds_servers = [OPDSServerConfig(url=s["url"], name=s.get("name")) for s in raw_servers]
@@ -91,8 +89,10 @@ def load_config(paths: Paths) -> Config:
         theme=data.get("theme"),
         max_width=data.get("max_width"),
         paragraph_spacing=data.get("paragraph_spacing"),
-
+        keybindings=data.get("keybindings", {}),
     )
+
+
 
 def save_config(paths: Paths, config: Config) -> None:
     data = {
@@ -104,8 +104,9 @@ def save_config(paths: Paths, config: Config) -> None:
         "theme": config.theme,
         "max_width": config.max_width,
         "paragraph_spacing": config.paragraph_spacing,
+        "keybindings": config.keybindings,
     }
-    data = {k: v for k, v in data.items() if v is not None and v != []}
+    data = {k: v for k, v in data.items() if v is not None and v != [] and v != {}}
 
     with open(paths.config_file, "w") as f:
         toml.dump(data, f)

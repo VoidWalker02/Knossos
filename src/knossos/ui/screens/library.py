@@ -9,6 +9,8 @@ from rich.text import Text
 
 from textual.screen import Screen
 from textual.app import ComposeResult
+from textual.binding import Binding
+
 from textual.containers import Vertical, Horizontal
 
 from textual.widgets import Header, Footer, ListView, ListItem, Label, DataTable, Input, Static
@@ -47,17 +49,15 @@ class LibraryScreen(Screen):
     """Shows scanned EPUBs from a directory; selecting one opens it for reading."""
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("o", "open_opds", "Browse OPDS"),
-        ("s", "cycle_sort", "Sort"),
-        ("/", "start_filter", "Filter"),
-        ("escape", "close_filter", "Close filter"),
-        ("f", "full_search", "Search library"),
-        ("c", "continue_reading", "Continue reading"),
-        ("m", "view_marks", "Your marks"),
-
-    ]
-   
+        Binding("q", "quit", "Quit", id="library.quit"),
+        Binding("o", "open_opds", "Browse OPDS", id="library.opds"),
+        Binding("s", "cycle_sort", "Sort", id="library.sort"),
+        Binding("/", "start_filter", "Filter", id="library.filter"),
+        Binding("escape", "close_filter", "Close filter", id="library.close_filter"),
+        Binding("f", "full_search", "Search library", id="library.search"),
+        Binding("c", "continue_reading", "Continue reading", id="library.continue"),
+        Binding("m", "view_marks", "Your marks", id="library.marks"),
+    ]   
 
     
     def __init__(self, library_dirs: list[Path]) -> None:

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from textual.screen import Screen
 from textual.app import ComposeResult
+from textual.binding import Binding
+
 from textual.widgets import Header, Footer, ListView, ListItem, Label, DataTable, Static, Input
 from textual.containers import Vertical, Horizontal
 from urllib.parse import quote
@@ -62,10 +64,10 @@ class OPDSScreen(Screen):
     """
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("escape", "go_back", "Back"),
-        ("s", "switch_server", "Switch server"),
-        ("/", "start_search", "Search"),
+        Binding("q", "quit", "Quit", id="opds.quit"),
+        Binding("escape", "go_back", "Back", id="opds.back"),
+        Binding("s", "switch_server", "Switch server", id="opds.switch_server"),
+        Binding("/", "start_search", "Search", id="opds.search"),    
     ]
 
     def __init__(self, root_url: str | None = None) -> None:
