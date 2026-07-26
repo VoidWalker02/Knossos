@@ -28,6 +28,11 @@ class Paths:
     def config_file(self) -> Path:
         return self.config_dir / "config.toml"
 
+    @property
+    def opds_downloads_default(self) -> Path:
+        """Fallback download location if the user hasn't configured one."""
+        return self.data_dir / "opds_downloads"    
+
 def get_paths() -> Paths:
     """Resolve Knossos's config/data/cache directories for the current OS,
     creating them if they don't exist yet."""
@@ -63,6 +68,7 @@ class Config:
     max_width: int | None = None
     paragraph_spacing: int | None = None
     keybindings: dict[str, str] = field(default_factory=dict)
+    opds_download_dir: str | None = None
 
 
 def load_config(paths: Paths) -> Config:
@@ -90,6 +96,7 @@ def load_config(paths: Paths) -> Config:
         max_width=data.get("max_width"),
         paragraph_spacing=data.get("paragraph_spacing"),
         keybindings=data.get("keybindings", {}),
+        opds_download_dir=data.get("opds_download_dir"),
     )
 
 
@@ -105,6 +112,7 @@ def save_config(paths: Paths, config: Config) -> None:
         "max_width": config.max_width,
         "paragraph_spacing": config.paragraph_spacing,
         "keybindings": config.keybindings,
+        "opds_download_dir": config.opds_download_dir,
     }
     data = {k: v for k, v in data.items() if v is not None and v != [] and v != {}}
 

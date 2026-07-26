@@ -236,7 +236,11 @@ class OPDSScreen(Screen):
     def download_and_open(self, entry: OPDSEntry) -> None:
         acquisition_link = entry.acquisition_links[0]
         filename = _safe_filename(entry.title) + ".epub"
-        destination = DOWNLOAD_DIR / filename
+
+        paths = get_paths()
+        download_dir_setting = self.app.config.opds_download_dir
+        download_dir = Path(download_dir_setting) if download_dir_setting else paths.opds_downloads_default
+        destination = download_dir / filename
 
         self.notify(f"Downloading {entry.title}...")
         saved_path = download_book(acquisition_link.href, destination)

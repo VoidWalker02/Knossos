@@ -1,6 +1,6 @@
-# Knossos
+#Knossos
 
-A terminal-based EPUB reader with library management, bookmarks, annotations, and OPDS support, built with Python and [Textual](https://github.com/Textualize/textual).
+A terminal-based EPUB reader with library management, precise annotations, bookmarks, dictionary lookup, and OPDS support, built with Python and [Textual](https://github.com/Textualize/textual).
 
 Knossos aims to be a fast, keyboard-driven way to read and manage an EPUB collection from the terminal, whether your books live in local folders or on a remote OPDS catalog (in my case, a self-hosted [Calibre](https://calibre-ebook.com/download) content server).
 
@@ -8,46 +8,54 @@ Knossos aims to be a fast, keyboard-driven way to read and manage an EPUB collec
 
 **Reading**
 
-- **EPUB parsing** — metadata (title, author, language, identifier), reading order (spine), and table of contents extraction, via `ebooklib`.
-- **Terminal reading view** — chapter content converted to readable text and rendered in a scrollable pane, **bold/italic emphasis are preserved** as real styling.
-- **Chapter navigation** — page forward/backward through a book, or jump directly to any entry in the table of contents.
-- **Scroll memory** — returning to a previously visited chapter within a session restores your scroll position.
-- **Reading progress persistence** — your position is saved to a local SQLite database and restored automatically the next time you open the same book.
-- **Search within a book** — full-text search across every chapter of the current book, with contextual snippets and one-key jump-to-match.
-- **Adjustable text width** — cap the reading column width for comfortable line lengths regardless of terminal size, adjustable on the fly and persisted.
+- EPUB parsing (metadata, spine/reading order, table of contents) via `ebooklib`, keyed by each book's stable `dc:identifier` where available, so a book keeps its history even if the file is moved, renamed, or reached via a different path.
+- Terminal reading view with bold/italic emphasis preserved as real styling.
+- Chapter navigation and jump-to-chapter via the table of contents.
+- Adjustable reading column width and paragraph spacing, both live-adjustable and persisted.
+- Full-text search within the current book, with contextual snippets and one-key jump-to-match.
+- In-app dictionary lookup, look up any word via a free online dictionary API without leaving the reader.
+- Per-chapter scroll memory, plus persistent reading progress saved across restarts and automatically restored.
 
-**Organization**
+**Annotations & bookmarks**
 
-- **Bookmarks** — save named or auto-labeled bookmarks at any point in a book, browse them in a dedicated panel, and jump to or delete them.
-- **Annotations** — highlight a paragraph in the current chapter and attach an optional note to it. View, jump to, or delete saved annotations per book.
-- **Library view** — point Knossos at one or more directories, and it recursively scans for `.epub` files, extracting metadata for each. Presented as a sortable (title/author/source), filterable table with a live details panel (author, source folder, last-read progress).
-- **Multiple library folders** — configure any number of local directories, Knossos merges and deduplicates books across all of them.
+- **Precise, cursor-based highlighting** — select any exact passage with your terminal's native click-and-drag text selection, press a key, and it becomes an annotation. 
+- Highlighted passages are visually flagged whenever you scroll past them again.
+- Add, edit, or delete a note on any annotation.
+- Jump to an annotation and land close to its actual position.
+- Bookmarks: save, browse, jump to, and delete named or auto-labeled bookmarks per book.
+- **"Your marks"**, a single view combining every bookmark and annotation across your entire library, sorted by recency, with one-key jump to any of them.
+
+**Library**
+
+- Point Knossos at one or more directories, it recursively scans for `.epub` files and presents them in a sortable (title/author/source), filterable table with a live details panel.
+- Sorting by source visually groups books under a header per folder.
+- **Duplicate detection** — the same book appearing in more than one configured folder (matched by its stable EPUB identifier) is collapsed into a single row, with the other copies' locations noted in the details panel.
+- **Continue reading** — jump straight back into your most recently opened book with one key.
+- **Full-text search across your entire library**, not just the currently open book.
 
 **OPDS (remote catalogs)**
 
-- **Browse a Calibre OPDS server** — navigate folders (by title, author, series, etc.) and explore acquisition feeds seamlessly, with the same sortable table and details panel treatment as your local library (author, format, file size, acquisition date, description where available, not all EPUBs contain summaries).
-- **Download and open** — selecting a book downloads it and opens it directly in the reader, using the same progress/bookmark/annotation machinery as local books.
-- **Server-side search** — search a Calibre catalog directly via its OPDS search feed, when supported.
-- **Multiple OPDS servers** — configure more than one server and cycle between them.
+- Browse a Calibre OPDS server: navigate folders and drill into acquisition feeds, with the same table and details panel treatment as the local library (author, format, file size, publish date, description where available).
+- Download and open a book directly from a remote catalog, downloaded books flow through the same progress/bookmark/annotation system as local files.
+- Server-side search against a Calibre catalog's OPDS search feed.
+- Multiple configured OPDS servers, switchable at runtime.
+- **Resilient to a flaky or offline server** — feeds are cached to disk, a temporarily unreachable server falls back to the last successfully cached copy rather than failing outright.
 
 **Customization**
 
-- **Themes** — cycle built-in dark/light themes, or pick from Textual's full built-in theme set (Nord, Dracula, Gruvbox, Catppuccin, and more) via the command palette. Knossos also ships two custom themes tuned for reading: `knossos-sepia` (warm, paper-like) and `knossos-night`! Your choice is remembered across restarts, however you choose to set it.
-- **Configurable library/server setup** — default library folders and OPDS servers are stored in a config file, so `knossos` can be run with no arguments.
+- Cycle built-in dark/light themes, or choose from Textual's full built-in theme set (Nord, Dracula, Gruvbox, Catppuccin, and more) via the command palette (`ctrl+p`).
+- Two custom themes built for reading comfort: `knossos-sepia` (warm, paper-like) and `knossos-night`!.
+- Theme choice persists across restarts regardless of how it was set.
+- Config file (`config.toml`) for default library folders, OPDS servers, theme, reading width, and paragraph spacing, lets Knossos launch with zero arguments.
+- **Configurable keybindings** — Change the keybindings for each action in the config file to your preference. 
 
 ## Planned
 
-Roughly in priority order:
-
-- **Full-text search across the whole library** — not just the currently open book.
-- **"Continue reading" quick-launch** — jump straight back into your most recently opened book from the library screen.
-- **Chapter-aware highlight rendering** — annotated passages visually flagged when you scroll past them again, not just accessible via the annotations panel.
-- **Footnote support** — detect and render footnotes properly instead of stripping them.
-- **Configurable keybindings.**
-- **OPDS resilience** — more graceful handling of an unreachable server, and feed caching.
-- **Reading stats/dashboard** — time spent reading, books finished, streaks.
+- **Footnote support** — detect footnote references and their targets, jump to a footnote and back to where you were reading.
+- **Cloud progress sync** — a small self-hosted sync service, keyed by each book's identifier, syncing on open/close. 
+- **Reading stats/dashboard** — Get reading statistics, finished books, streaks, etc.
 - **Export** — bookmarks/annotations to markdown or plain text.
-
+- **Packaging** — PyPI and Homebrew distribution.
 
 ## Requirements
 
@@ -80,48 +88,54 @@ knossos /path/to/your/books
 
 ### Configuration
 
-Knossos reads a TOML config file (location below) for default settings. Example:
+Knossos reads a `config.toml` file for default settings, library folders, OPDS servers, theme, reading width, and paragraph spacing, so it can be launched with no arguments.
 
-```toml
-library_dirs = ["/Users/you/Books", "/Volumes/External/More Books"]
-theme = "knossos-sepia"
-max_width = 90
-
-[[opds_servers]]
-url = "http://192.168.1.50:8080/opds"
-name = "Home Calibre"
-
-[[opds_servers]]
-url = "http://100.x.x.x:8080/opds"
-name = "Remote Calibre (Tailscale)"
-```
-
-All fields are optional, Knossos will fall back sensibly if any are missing.
-
-### **Location** (created automatically the first time Knossos runs):
+**Location** (created automatically the first time Knossos runs):
 
 - **Linux**: `~/.config/knossos/config.toml` (respects `XDG_CONFIG_HOME` if set)
 - **macOS**: `~/Library/Application Support/knossos/config.toml`
 
-If the file doesn't exist yet, create it by hand at that path, or just run Knossos once (pointing it at a directory as an argument) and edit the file afterward.
+Example, based on a real working setup:
 
+```toml
+library_dirs = [
+    "/Users/moraisi/Downloads",
+    "/Users/moraisi/Documents/Books",
+]
+theme = "dracula"
+max_width = 135
+paragraph_spacing = 1
 
+[[opds_servers]]
+url = "http://100.122.21.102:8080/opds"
+```
+
+Notes:
+
+- `library_dirs` is a list, add as many local folders as you like, Knossos merges and deduplicates books across all of them.
+- `theme` accepts any theme name Knossos knows about, built-in Textual themes (`nord`, `dracula`, `gruvbox`, `catppuccin-mocha`, etc.), Knossos's own (`knossos-sepia`, `knossos-night`), or whatever you last picked via the command palette (`ctrl+p`), which is saved here automatically.
+- `max_width` is the reading column width in terminal columns, `paragraph_spacing` controls blank lines between paragraphs, both adjustable live in the reader (`+`/`-` and `[`/`]` respectively), which updates this file automatically.
+- `[[opds_servers]]` is a repeatable table, add one block per server. `name` is optional (shown in place of the URL when switching servers with `s`), omit it and the raw URL is used instead.
+- All fields are optional, Knossos falls back sensibly if any are missing, and a missing config file entirely is treated the same as an empty one.
 
 ### Keybindings
 
 **Library view**
 
-| Key      | Action                                    |
-| -------- | ----------------------------------------- |
-| `↑`/`↓`  | Move selection                            |
-| `Enter`  | Open book                                 |
-| `s`      | Cycle sort mode (title / author / source) |
-| `/`      | Filter by title or author                 |
-| `Escape` | Close filter                              |
-| `o`      | Browse OPDS                               |
-| `ctrl+t` | Toggle dark/light theme                   |
-| `ctrl+p` | Command palette (full theme picker, etc.) |
-| `q`      | Quit                                      |
+|Key|Action|
+|---|---|
+|`↑`/`↓`|Move selection|
+|`Enter`|Open book|
+|`s`|Cycle sort mode (title / author / source)|
+|`/`|Filter by title or author|
+|`Escape`|Close filter|
+|`o`|Browse OPDS|
+|`f`|Search across your whole library|
+|`c`|Continue reading (jump to most recent book)|
+|`m`|View all bookmarks and annotations ("your marks")|
+|`ctrl+t`|Toggle dark/light theme|
+|`ctrl+p`|Command palette (full theme picker, etc.)|
+|`q`|Quit|
 
 **Reader view**
 
@@ -132,10 +146,14 @@ If the file doesn't exist yet, create it by hand at that path, or just run Knoss
 |`t`|Toggle table of contents|
 |`/`|Search within this book|
 |`+` / `-`|Widen / narrow reading column|
+|`[` / `]`|Decrease / increase paragraph spacing|
+|`z`|Look up a word (dictionary)|
+|Click + drag|Select a passage of text (native Textual selection)|
+|`h`|Turn the current selection into an annotation|
+|`H`|Toggle annotations panel|
+|`r`|Edit the highlighted annotation's note|
 |`b`|Add a bookmark at current position|
 |`B`|Toggle bookmarks panel|
-|`h`|Highlight a paragraph (annotation)|
-|`H`|Toggle annotations panel|
 |`d`|Delete highlighted bookmark/annotation (while that panel is open)|
 |`Escape`|Close any open panel, or return to the library|
 |`q`|Quit (progress is saved automatically)|
@@ -151,14 +169,22 @@ If the file doesn't exist yet, create it by hand at that path, or just run Knoss
 |`Escape`|Go back a folder, or return to the library|
 |`q`|Quit|
 
+**Your marks view**
+
+|Key|Action|
+|---|---|
+|`↑`/`↓`|Move selection|
+|`Enter`|Jump to that bookmark/annotation|
+|`Escape`|Back to library|
+
 ## Data storage
 
-Knossos stores its SQLite database and config file in OS-standard locations (via `platformdirs`):
+Knossos stores its SQLite database in an OS-standard data directory (via `platformdirs`), see Configuration above for the config file's location specifically:
 
-- **Linux**: `~/.local/share/knossos/` (data) and `~/.config/knossos/` (config) — respects `XDG_DATA_HOME`/`XDG_CONFIG_HOME` if set
-- **macOS**: `~/Library/Application Support/knossos/` (both data and config)
+- **Linux**: `~/.local/share/knossos/knossos.db` , respects `XDG_DATA_HOME` if set
+- **macOS**: `~/Library/Application Support/knossos/knossos.db`
 
-This includes your library index, reading progress, bookmarks, and annotations. No data is stored alongside your EPUB files.
+This includes your library index, reading progress, bookmarks, and annotations, keyed primarily by each book's EPUB identifier (falling back to file path for books that lack one). No data is stored alongside your EPUB files. Cached OPDS feeds live separately under the platform's cache directory.
 
 ## Project structure
 
@@ -166,25 +192,33 @@ This includes your library index, reading progress, bookmarks, and annotations. 
 knossos/
 ├── pyproject.toml
 ├── README.md
-├── books/                      # example/test EPUBs (not part of the package)
-├── opds_downloads/             # books downloaded via the OPDS browser
+├── books/                       # example/test EPUBs (not part of the package)
+├── opds_downloads/              # books downloaded via the OPDS browser
 ├── src/
 │   └── knossos/
-│       ├── app.py              # Textual App + Screens (reader), theming
-│       ├── config.py           # cross-platform paths, config file load/save
-│       ├── db.py                # SQLite schema: books, progress, bookmarks, annotations
-│       ├── library.py           # local directory scanning (single + multi-folder)
-│       ├── covers.py             # (experimental) cover image extraction/caching
-│       ├── themes.py            # custom Textual themes (knossos-sepia, knossos-night)
+│       ├── app.py               # Textual App + ReaderScreen, theming, keymap application
+│       ├── config.py            # cross-platform paths, config file load/save
+│       ├── db.py                 # SQLite schema: books (by identifier), progress,
+│       │                        # bookmarks, annotations, migrations
+│       ├── library.py            # local directory scanning, multi-folder merge,
+│       │                        # identifier-based duplicate collapsing
+│       ├── library_search.py     # full-text search across the whole library
+│       ├── dictionary.py         # online dictionary lookup client
+│       ├── covers.py             # (experimental, unused) cover image extraction
+│       ├── themes.py             # custom Textual themes (knossos-sepia, knossos-night)
 │       ├── epub/
-│       │   ├── book.py          # EPUB loading, metadata, spine, TOC, text/markup conversion
-│       │   └── search.py        # in-book full-text search
+│       │   ├── book.py           # EPUB loading, metadata, spine, TOC, text/markup
+│       │   │                    # conversion, paragraph spacing, highlight rendering
+│       │   └── search.py         # in-book full-text search
 │       ├── opds/
-│       │   ├── client.py        # OPDS HTTP fetch + book download
-│       │   └── feed.py          # Atom/OPDS feed parsing (nav vs. acquisition, search template)
+│       │   ├── client.py         # OPDS HTTP fetch (with error handling) + download
+│       │   ├── feed.py           # Atom/OPDS feed parsing (nav vs. acquisition, search)
+│       │   └── cache.py          # on-disk feed caching with TTL + stale fallback
 │       └── ui/
 │           └── screens/
-│               ├── library.py    # library table, sort/filter, details panel
-│               └── opds.py       # OPDS browser table, details panel, search
+│               ├── library.py         # library table, sort/filter, details panel
+│               ├── library_search.py  # library-wide search screen
+│               ├── marks.py           # combined bookmarks + annotations view
+│               └── opds.py            # OPDS browser table, details panel, search
 └── tests/
-```
+`````
