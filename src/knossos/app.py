@@ -16,7 +16,7 @@ from textual.screen import Screen
 
 from knossos.config import get_paths
 from knossos.db import connect, get_or_create_book, save_progress, load_progress, add_annotation, list_annotations, delete_annotation
-from knossos.dictionary import lookup_word
+from knossos.dictionary import lookup_word, resolve_language_code, language_display_name, SUPPORTED_LANGUAGES
 
 from knossos.epub.book import (
     load_book,
@@ -92,6 +92,7 @@ class ReaderScreen(Screen):
         Binding("H", "toggle_annotations", "View annotations", id="reader.view_annotations"),
         Binding("r", "edit_annotation", "Edit note", id="reader.edit_annotation"),
         Binding("z", "start_dictionary_lookup", "Look up word", id="reader.dictionary"),
+        Binding("L", "toggle_language_picker", "Dictionary language", id="reader.dictionary_language"),
         Binding("escape", "back_to_library", "Library", id="reader.back"),
     ]
 
@@ -107,6 +108,7 @@ class ReaderScreen(Screen):
         self.book_id: int | None = None
         self.max_width = DEFAULT_MAX_WIDTH
         self.paragraph_spacing = DEFAULT_PARAGRAPH_SPACING
+        self.dictionary_language = "en"
 
 
 
@@ -116,6 +118,7 @@ class ReaderScreen(Screen):
             yield Static(id="reader-content")
         yield ListView(id="toc-panel")
         yield ListView(id="bookmarks-panel")
+        yield ListView(id="dictionary-language-picker")
         with Vertical(id="search-panel"):
             yield Input(placeholder="Search this book...", id="search-input")
             yield ListView(id="search-results")
@@ -161,6 +164,7 @@ class ReaderScreen(Screen):
             else DEFAULT_PARAGRAPH_SPACING
         )
         self._apply_reader_width()
+        self.dictionary_language = resolve_language_code(meta.language)
 
         self.build_toc_panel()
         self.query_one("#toc-panel", ListView).display = False
@@ -170,6 +174,7 @@ class ReaderScreen(Screen):
         self.query_one("#annotations-panel", ListView).display = False
         self.query_one("#dictionary-bar", Vertical).display = False
         self.query_one("#dictionary-panel", Vertical).display = False
+        self.query_one("#dictionary-language-picker", ListView).display = False
         self._pending_highlight_text: str | None = None
         self._pending_highlight_paragraph_index: int | None = None
 
@@ -432,6 +437,9 @@ class ReaderScreen(Screen):
         if dictionary_panel.display:
             self.action_close_dictionary()
             return
+        if language_picker.display:
+            self.action_toggle_language_picker()
+            return    
 
         self._persist_progress()
         self.app.pop_screen()   
@@ -496,6 +504,13 @@ class ReaderScreen(Screen):
         bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
         search_results = self.query_one("#search-results", ListView)
         annotations_panel = self.query_one("#annotations-panel", ListView)
+        language_picker = self.query_one("#dictionary-language-picker", ListView)
+
+        if event.list_view is language_picker:
+            self.dictionary_language = event.item.language_code
+            self.notify(f"Dictionary language: {language_display_name(self.dictionary_language)}")
+            self.action_toggle_language_picker()
+            return
 
         self._save_scroll_position()
 
@@ -518,6 +533,7 @@ class ReaderScreen(Screen):
             self.action_toggle_annotations()
 
         self.render_current_chapter()
+    
 
     def action_toggle_annotations(self) -> None:
         panel = self.query_one("#annotations-panel", ListView)
@@ -550,13 +566,36 @@ class ReaderScreen(Screen):
         self.query_one("#search-panel", Vertical).display = False
         self.query_one("#reader-pane", VerticalScroll).display = True
 
+    
+
     def action_start_dictionary_lookup(self) -> None:
         reader_pane = self.query_one("#reader-pane", VerticalScroll)
         dictionary_bar = self.query_one("#dictionary-bar", Vertical)
 
+        input_widget = self.query_one("#dictionary-input", Input)
+        input_widget.placeholder = f"Word to look up ({self.dictionary_language})..."
+
         reader_pane.display = False
         dictionary_bar.display = True
-        self.query_one("#dictionary-input", Input).focus()
+        input_widget.focus()
+
+
+
+    def action_toggle_language_picker(self) -> None:
+        picker = self.query_one("#dictionary-language-picker", ListView)
+        reader_pane = self.query_one("#reader-pane", VerticalScroll)
+        showing = picker.display
+
+        if not showing:
+            picker.clear()
+            for code, name in SUPPORTED_LANGUAGES:
+                marker = "● " if code == self.dictionary_language else "  "
+                item = ListItem(Label(f"{marker}{name}"))
+                item.language_code = code
+                picker.append(item)
+
+        picker.display = not showing
+        reader_pane.display = showing    
 
 
      
@@ -587,24 +626,27 @@ class ReaderScreen(Screen):
         content.update(f"Looking up '{word}'...")
         panel.display = True
 
-        result = await lookup_word(word)
+        language = self.dictionary_language
+        result = await lookup_word(word, language=language)
 
         if result is None:
-            content.update(f"No definition found for '{word}'.")
+            content.update(f"No definition found for '{word}' [dim]({language_display_name(language)})[/dim].")
             return
 
-        lines = [f"[bold]{result.word}[/bold]"]
+        lines = [f"[bold]{result.word}[/bold]  [dim]({language_display_name(language)})[/dim]"]
         if result.phonetic:
             lines.append(f"[dim]{result.phonetic}[/dim]")
         lines.append("")
 
-        for d in result.definitions[:5]:  # cap displayed senses to keep the panel readable
+        for d in result.definitions[:5]:
             lines.append(f"[italic]{d.part_of_speech}[/italic]  {d.definition}")
             if d.example:
                 lines.append(f"  [dim]e.g. \"{d.example}\"[/dim]")
             lines.append("")
 
         content.update("\n".join(lines))
+
+
 
     def action_close_dictionary(self) -> None:
         panel = self.query_one("#dictionary-panel", Vertical)
