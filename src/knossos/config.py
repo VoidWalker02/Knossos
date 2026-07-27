@@ -69,6 +69,8 @@ class Config:
     paragraph_spacing: int | None = None
     keybindings: dict[str, str] = field(default_factory=dict)
     opds_download_dir: str | None = None
+    sync_server_url: str | None = None
+
 
 
 def load_config(paths: Paths) -> Config:
@@ -97,6 +99,7 @@ def load_config(paths: Paths) -> Config:
         paragraph_spacing=data.get("paragraph_spacing"),
         keybindings=data.get("keybindings", {}),
         opds_download_dir=data.get("opds_download_dir"),
+        sync_server_url=data.get("sync_server_url"),
     )
 
 
@@ -113,6 +116,7 @@ def save_config(paths: Paths, config: Config) -> None:
         "paragraph_spacing": config.paragraph_spacing,
         "keybindings": config.keybindings,
         "opds_download_dir": config.opds_download_dir,
+        "sync_server_url": config.sync_server_url,
     }
     data = {k: v for k, v in data.items() if v is not None and v != [] and v != {}}
 

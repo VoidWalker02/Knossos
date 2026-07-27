@@ -11,6 +11,7 @@ import re
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from knossos.sync import push_progress, pull_progress
 
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Static, ListView, ListItem, Label
@@ -139,7 +140,7 @@ class ReaderScreen(Screen):
             yield Static("", id="dictionary-content")
         yield Footer()
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         book = load_book(self.book_path)
         self._book = book
         meta = get_metadata(book)
@@ -159,12 +160,21 @@ class ReaderScreen(Screen):
         )
 
         saved = load_progress(self.db_conn, self.book_id)
+        local_updated_at: str | None = None
         if saved is not None:
-            self.current_index, initial_scroll = saved
+            self.current_index, initial_scroll, local_updated_at = saved
             self.scroll_positions[self.current_index] = initial_scroll
         else:
             self.current_index = 0
 
+
+        sync_url = self.app.config.sync_server_url
+        if sync_url and meta.identifier:
+            remote = await pull_progress(sync_url, meta.identifier)
+            if remote is not None and (local_updated_at is None or remote.updated_at > local_updated_at):
+                self.current_index = remote.chapter_index
+                self.scroll_positions[self.current_index] = remote.scroll_y    
+        
         app_config = self.app.config
         self.max_width = app_config.max_width or DEFAULT_MAX_WIDTH
         self.paragraph_spacing = (
@@ -251,15 +261,29 @@ class ReaderScreen(Screen):
 
         return float(lines_before)    
 
-    def _persist_progress(self) -> None:
+    async def _persist_progress(self) -> None:
         if self.db_conn is not None and self.book_id is not None:
             reader_pane = self.query_one("#reader-pane", VerticalScroll)
-            save_progress(
+            updated_at = save_progress(
                 self.db_conn,
                 self.book_id,
                 chapter_index=self.current_index,
                 scroll_y=reader_pane.scroll_y,
             )
+
+            sync_url = self.app.config.sync_server_url
+            book = getattr(self, "_book", None)
+            if sync_url and book is not None:
+                meta = get_metadata(book)
+                if meta.identifier:
+                    await push_progress(
+                        sync_url,
+                        meta.identifier,
+                        title=meta.title,
+                        chapter_index=self.current_index,
+                        scroll_y=reader_pane.scroll_y,
+                    )
+
             self.db_conn.close()
             self.db_conn = None
 
@@ -412,7 +436,7 @@ class ReaderScreen(Screen):
         reader_pane.display = showing
 
    
-    def action_back_to_library(self) -> None:
+    async def action_back_to_library(self) -> None:
         search_panel = self.query_one("#search-panel", Vertical)
         toc_panel = self.query_one("#toc-panel", ListView)
         bookmarks_panel = self.query_one("#bookmarks-panel", ListView)
@@ -453,13 +477,13 @@ class ReaderScreen(Screen):
             self.action_toggle_language_picker()
             return    
 
-        self._persist_progress()
+        await self._persist_progress()
         self.app.pop_screen()   
     
 
 
-    def action_quit(self) -> None:
-        self._persist_progress()
+    async def action_quit(self) -> None:
+        await self._persist_progress()
         self.app.exit()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:

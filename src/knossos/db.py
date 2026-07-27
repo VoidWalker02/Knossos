@@ -6,6 +6,8 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+from datetime import datetime, timezone
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS books (
@@ -72,6 +74,11 @@ def connect(db_path: Path) -> sqlite3.Connection:
     existing_book_columns = {row["name"] for row in conn.execute("PRAGMA table_info(books)")}
     if "identifier" not in existing_book_columns:
         conn.execute("ALTER TABLE books ADD COLUMN identifier TEXT")
+
+
+    existing_progress_columns = {row["name"] for row in conn.execute("PRAGMA table_info(progress)")}
+    if "updated_at" not in existing_progress_columns:
+        conn.execute("ALTER TABLE progress ADD COLUMN updated_at TEXT")    
 
     # Only safe to create this index once the identifier column definitely
     # exists — hence doing it here, after the migration above, rather than
@@ -147,31 +154,32 @@ def get_or_create_book(
     conn.commit()
     return cursor.lastrowid
 
-def save_progress(conn: sqlite3.Connection, book_id: int, chapter_index: int, scroll_y: float) -> None:
-    """Save reading progress for a book."""
+def save_progress(conn: sqlite3.Connection, book_id: int, chapter_index: int, scroll_y: float) -> str:
+    """Saves progress locally and returns the timestamp it was stored
+    with, so callers (e.g. sync) can push that exact same value."""
+    updated_at = _now_iso()
     conn.execute(
         """
         INSERT INTO progress (book_id, chapter_index, scroll_y, updated_at)
-        VALUES (?, ?, ?, datetime('now'))
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(book_id) DO UPDATE SET
             chapter_index = excluded.chapter_index,
             scroll_y = excluded.scroll_y,
             updated_at = excluded.updated_at
         """,
-        (book_id, chapter_index, scroll_y),
+        (book_id, chapter_index, scroll_y, updated_at),
     )
     conn.commit()
+    return updated_at
 
-
-def load_progress(conn: sqlite3.Connection, book_id: int) -> tuple[int, float] | None:
-    """Return (chapter_index, scroll_y) for a book, or None if no progress saved yet."""
+def load_progress(conn: sqlite3.Connection, book_id: int) -> tuple[int, float, str | None] | None:
     row = conn.execute(
-        "SELECT chapter_index, scroll_y FROM progress WHERE book_id = ?",
+        "SELECT chapter_index, scroll_y, updated_at FROM progress WHERE book_id = ?",
         (book_id,),
     ).fetchone()
     if row is None:
         return None
-    return row["chapter_index"], row["scroll_y"]
+    return row["chapter_index"], row["scroll_y"], row["updated_at"]
 
 def add_bookmark(
     conn: sqlite3.Connection,
@@ -311,4 +319,12 @@ def list_all_annotations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         JOIN books ON books.id = annotations.book_id
         ORDER BY annotations.created_at DESC
         """
-    ).fetchall()    
+    ).fetchall()   
+
+
+
+def _now_iso() -> str:
+    """Current UTC time as an ISO 8601 string — must match the format
+    knossos/sync.py uses, since local and remote timestamps get compared
+    directly as strings."""
+    return datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()

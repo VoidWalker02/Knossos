@@ -234,11 +234,10 @@ class LibraryScreen(Screen):
         book_id = get_book_id_by_identity(self.db_conn, entry.identifier, str(entry.path.resolve()))
         progress_line = "Not started yet."
         if book_id is not None:
-            progress = load_progress(self.db_conn, book_id)
-            if progress is not None:
-                chapter_index, _scroll_y = progress
+           progress = load_progress(self.db_conn, book_id)
+           if progress is not None:
+                chapter_index, _scroll_y, _updated_at = progress
                 progress_line = f"Last opened at chapter {chapter_index + 1}."
-
         details = (
             f"[bold]{entry.title}[/bold]\n\n"
             f"Author: {entry.author or 'Unknown'}\n"
