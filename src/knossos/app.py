@@ -7,6 +7,8 @@ from pathlib import Path
 
 import textwrap
 
+import re
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 
@@ -15,6 +17,8 @@ from textual.widgets import Footer, Header, Static, ListView, ListItem, Label
 from textual.screen import Screen
 
 from knossos.config import get_paths
+from knossos.epub.footnotes import extract_footnote_references, extract_footnote_targets
+
 from knossos.db import connect, get_or_create_book, save_progress, load_progress, add_annotation, list_annotations, delete_annotation
 from knossos.dictionary import lookup_word, resolve_language_code, language_display_name, SUPPORTED_LANGUAGES
 
@@ -26,6 +30,7 @@ from knossos.epub.book import (
     chapter_to_text,
     chapter_to_markup,
     apply_highlights,
+    style_footnote_markers,
 )
 from knossos.db import (
     connect,
@@ -93,6 +98,8 @@ class ReaderScreen(Screen):
         Binding("r", "edit_annotation", "Edit note", id="reader.edit_annotation"),
         Binding("z", "start_dictionary_lookup", "Look up word", id="reader.dictionary"),
         Binding("L", "toggle_language_picker", "Dictionary language", id="reader.dictionary_language"),
+        Binding("g","jump_to_footnote", "Jump to footnote.",id="reader.jump_to_footnote"),
+        Binding("u", "return_from_footnote", "Return from footnote.", id="reader.return_from_footnote"),
         Binding("escape", "back_to_library", "Library", id="reader.back"),
     ]
 
@@ -109,6 +116,7 @@ class ReaderScreen(Screen):
         self.max_width = DEFAULT_MAX_WIDTH
         self.paragraph_spacing = DEFAULT_PARAGRAPH_SPACING
         self.dictionary_language = "en"
+        self.footnote_return_stack: list[tuple[int,float]] = []
 
 
 
@@ -133,6 +141,7 @@ class ReaderScreen(Screen):
 
     def on_mount(self) -> None:
         book = load_book(self.book_path)
+        self._book = book
         meta = get_metadata(book)
         self.title = meta.title
 
@@ -192,6 +201,8 @@ class ReaderScreen(Screen):
     def render_current_chapter(self) -> None:
         chapter = self.chapters[self.current_index]
         text = chapter_to_markup(chapter)
+        text = style_footnote_markers(text)
+
         chapter_excerpts = [
             row["excerpt"] for row in list_annotations(self.db_conn, self.book_id)
             if row["chapter_index"] == self.current_index
@@ -668,9 +679,63 @@ class ReaderScreen(Screen):
     def _save_paragraph_spacing(self) -> None:
         self.app.config.paragraph_spacing = self.paragraph_spacing
         save_config(self.app.paths, self.app.config)
-        self.notify(f"Paragraph spacing: {self.paragraph_spacing}")        
+        self.notify(f"Paragraph spacing: {self.paragraph_spacing}")
 
-# knossos/app.py (changes to KnossosApp)
+
+    def action_jump_to_footnote(self) -> None:
+        selected = self.get_selected_text()
+        if not selected or not selected.strip():
+            self.notify("Select a footnote number first, then press g.", severity="warning")
+            return
+
+        number = re.sub(r"\D", "", selected)  # strip brackets/punctuation, keep just digits
+        if not number:
+            self.notify("Selection doesn't look like a footnote number.", severity="warning")
+            return
+
+        chapter = self.chapters[self.current_index]
+        references = extract_footnote_references(self._book, chapter, self.chapters)
+
+        match = next((r for r in references if r.number == number), None)
+        if match is None:
+            self.notify(f"No footnote reference '{number}' found in this chapter.", severity="warning")
+            return
+
+        if match.target_chapter_index is None:
+            self.notify(f"Footnote {number}'s target couldn't be located.", severity="warning")
+            return
+
+        # Save exactly where we are now, so we can jump straight back.
+        reader_pane = self.query_one("#reader-pane", VerticalScroll)
+        self.footnote_return_stack.append((self.current_index, reader_pane.scroll_y))
+
+        target_chapter = self.chapters[match.target_chapter_index]
+        targets = extract_footnote_targets(target_chapter)
+        footnote_text = targets.get(match.anchor_id)
+
+        self.current_index = match.target_chapter_index
+        if footnote_text:
+            paragraph_index = self._find_paragraph_index_for_excerpt(normalize_excerpt(footnote_text))
+            if paragraph_index is not None:
+                self.scroll_positions[self.current_index] = self._estimate_scroll_for_paragraph(
+                    self.current_index, paragraph_index
+                )
+
+        self.render_current_chapter()
+
+
+
+    def action_return_from_footnote(self) -> None:
+        if not self.footnote_return_stack:
+            self.notify("No footnote jump to return from.", severity="warning")
+            return
+
+        chapter_index, scroll_y = self.footnote_return_stack.pop()
+        self.current_index = chapter_index
+        self.scroll_positions[chapter_index] = scroll_y
+        self.render_current_chapter()    
+
+
 
 class KnossosApp(App):
 

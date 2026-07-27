@@ -10,6 +10,9 @@ import re
 from ebooklib import epub
 from lxml import etree, html as lxml_html
 
+_FOOTNOTE_MARKER_RE = re.compile(r'([.!?"\'])(\d{1,3})(?=[\s)]|$)')
+
+
 
 @dataclass
 class BookMetadata:
@@ -317,3 +320,18 @@ def normalize_excerpt(text: str) -> str:
     must go through this same normalization to compare reliably.
     """
     return re.sub(r"\s+", " ", text).strip()    
+
+
+
+def style_footnote_markers(markup_text: str) -> str:
+    """
+    Style inline footnote reference numbers so they're visually distinct
+    from body text, instead of reading as a stray typo (e.g. "longer.22)").
+
+    Matches a run of 1-3 digits immediately following sentence-ending
+    punctuation, the pattern html2text produces for these EPUBs' footnote
+    reference links once their href is stripped. Deliberately narrow
+    (requires preceding punctuation) so ordinary numbers in prose
+    ("in 1887", "97 troopers") are never touched.
+    """
+    return _FOOTNOTE_MARKER_RE.sub(r"\1[bold dim]\[\2][/bold dim]", markup_text)
