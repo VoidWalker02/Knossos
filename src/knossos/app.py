@@ -409,6 +409,7 @@ class ReaderScreen(Screen):
         annotations_panel = self.query_one("#annotations-panel", ListView)
         dictionary_bar = self.query_one("#dictionary-bar", Vertical)
         dictionary_panel = self.query_one("#dictionary-panel", Vertical)
+        language_picker = self.query_one("#dictionary-language-picker", ListView)
 
         if search_panel.display:
             self._close_search()
